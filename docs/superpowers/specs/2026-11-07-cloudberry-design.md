@@ -385,3 +385,43 @@ count INT, last_at INT, PRIMARY KEY(day, name))`; a reaction counts toward the *
 - Tests: playlist URL validation (good/bad ids, foreign hosts, injection attempts), expansion parsing
   from a captured `--flat-playlist -J` fixture, truncation/capacity, cached entries enqueue without a
   job, cancel_playlist.
+
+---
+
+# Phase 4: de-AI pass (added 2026-11-07)
+Toby: "still feels a little AI", "the bloom shader covers the name and some other things", "needing more
+motion on the chat stuff like sending". Research: `docs/research-ai-ui-tells.md`. Toby chose **bog green**.
+
+## Look
+- **Page colour: bog green.** Deep mossy green page in both themes (light: mid-deep moss; dark: darker
+  moss/near-black green), replacing cream/off-white and warm near-black. Cards/panels are cream (light)
+  or deep-ink green (dark) with **thick white die-cut outlines that are actually visible** against the
+  green. Amber berry stays THE accent; leaf greens from the logo (`#7DB53A`, `#C8E04A`) are allowed as
+  secondary. Re-verify all contrast pairs.
+- **Shadows:** remove every soft blurred shadow; use one hard, offset (e.g. 0 4px 0), same-hue darker
+  shadow, like game tiles/stickers. Pressed = shadow collapses (translateY), already the button lip idea.
+- **Asymmetry / hierarchy:** one dominant element per view (oversized now-playing art, tilted 1–3°, can
+  break out of its panel); don't render the page as three equal rounded panels; vary radii by role.
+- **Icons:** replace Lucide on primary controls (play, pause, skip, add, chat, lean-back, volume) with a
+  small set of custom chunky filled SVG icons matching Fredoka's weight (inline Svelte components).
+  Lucide may remain for minor secondary glyphs only if they're restyled to a heavy stroke.
+- **Reactions:** six drawn reaction stickers (flat 2–3 tone SVG, white die-cut outline) replacing emoji
+  glyphs in the bar and in the float-up animation. Protocol keeps the same emoji strings.
+- **Remove template details:** section count badges; "● status" chips — LIVE becomes part of the
+  now-playing area (e.g. an on-air sticker), SYNC becomes a tiny game-style signal meter (bars) with the
+  ms value on hover/tap, not a chip; middle-dot metadata (`Name · 0:30`) → deliberate layout (name
+  chip, duration right-aligned). History and Library get different layouts (e.g. history = horizontal
+  strip of small tilted covers; library = list).
+- **Copy:** in the team's voice, short, a little playful, never marketing ("Paste a YouTube link" → e.g.
+  "Drop a YouTube link"; empty queue → something with personality). No captions explaining the obvious.
+- Mode switch (Halo/Bloom/Bars) restyled as chunky game tabs, not a stock segmented control.
+
+## Bugs
+- Bloom canvas/overlay must sit BEHIND content: it currently covers the track name and other UI.
+  Check stacking/z-index/pointer-events in the card, phone layout and lean-back.
+
+## Chat motion (anime.js + smear, reduced-motion respected)
+- Sending: message pops from the input into the list (squash + smear), input clears with a bounce, a
+  pending state until the server echoes it (match by text+name), then settles.
+- Receiving: messages slide in from the sender side with slight overshoot; bursts stagger.
+- "New messages" pill bounces in; poke/event lines get a small wiggle; event lines stay quiet.
