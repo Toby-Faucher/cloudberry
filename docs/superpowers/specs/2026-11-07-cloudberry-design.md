@@ -458,3 +458,34 @@ motion on the chat stuff like sending". Research: `docs/research-ai-ui-tells.md`
   pending state until the server echoes it (match by text+name), then settles.
 - Receiving: messages slide in from the sender side with slight overshoot; bursts stagger.
 - "New messages" pill bounces in; poke/event lines get a small wiggle; event lines stay quiet.
+
+---
+
+# Phase 5: lean-back shader pack (added 2026-11-07; Toby: "I really like the full screen mode. Can u make
+# it so there is more shaders there?")
+
+Lean-back gets a set of full-screen WebGL2 shaders, all in the flat sticker/game look (posterized bands,
+hard edges, white die-cut outlines where shapes exist, cloudberry amber + bog/leaf greens + `--track-tint`;
+never smudgy glow):
+1. **Bloom**: the existing one.
+2. **Bog**: layered flat parallax hills/moss silhouettes swaying with bass, cloudberries bobbing on stems,
+   fireflies that pop on `beat`.
+3. **Aurora**: arctic aurora ribbons in 3–4 posterized bands driven by mids/treble; stars twinkle on beats.
+4. **Drupelets**: SDF metaball berry cluster that wobbles with bass and squishes/splits on beats; toon-shaded
+   with a white outline and one flat highlight (like the logo).
+5. **Tunnel**: flat concentric rings rushing toward the viewer, ring thickness from the 64 bars, speed from energy.
+6. **Halftone**: comic-print dot grid whose dot sizes follow the spectrum radially, kaleidoscope symmetry,
+   colour flips on beats.
+
+Engineering:
+- One shared WebGL2 runner: fullscreen triangle, render at ~0.5× resolution then upscale (or 0.75× if a
+  shader looks too soft), shared uniforms `u_time, u_res, u_bass, u_mid, u_treble, u_energy, u_beat,
+  u_tint, u_accent` plus a 64×1 float texture of bars and a 256×1 texture of waveform. Each shader is
+  its own `.glsl`/`.ts` module; compile lazily on first use; crossfade 400 ms when switching.
+- Picker in lean-back: chunky game-tab row along the bottom, auto-hides with the rest of the lean-back
+  chrome after ~2.5 s idle, reappears on mouse move/tap. Keys: `←/→` previous/next shader, `A` toggles
+  auto-cycle (next shader on each track change). Choice saved in localStorage (try/catch).
+- Track title, artist chip and lyrics in lean-back always render ABOVE the shader with enough contrast
+  (sticker plate behind text if needed).
+- Budget: each shader ≤ ~4 ms GPU at 1080p×0.5 on integrated graphics; pause when hidden;
+  `prefers-reduced-motion` → a single static frame per track, no animation; no WebGL2 → current CSS fallback.
