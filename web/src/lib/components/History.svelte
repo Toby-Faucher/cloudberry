@@ -31,7 +31,7 @@
 							<Art track={t} size={96} />
 							{#if flashed === t.id}<span class="done"><Icon name="check" size={24} /><span class="label">Queued</span></span>{/if}
 						</span>
-						<span class="cap"><span class="i num">-{String(i + 1).padStart(2, '0')}</span>{t.title}</span>
+						<span class="cap"><span class="i num">{String(i + 1).padStart(2, '0')}</span>{t.title}</span>
 					</button>
 				</li>
 			{/each}
