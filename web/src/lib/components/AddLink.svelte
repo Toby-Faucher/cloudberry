@@ -78,23 +78,18 @@
 </section>
 
 <style>
+	/* A flat slot with a thick edge that lights up berry when you're in it. */
 	.add {
 		display: flex;
 		gap: 6px;
 		padding: 6px;
 		border-radius: 18px;
 		background: var(--surface);
-		border: 1px solid var(--line);
-		box-shadow: var(--shadow);
-		transition:
-			border-color 160ms var(--ease-out),
-			box-shadow 160ms var(--ease-out);
+		border: 3px solid var(--line);
+		transition: border-color 160ms var(--ease-out);
 	}
 	.add:focus-within {
-		border-color: color-mix(in oklab, var(--accent) 55%, var(--line));
-		box-shadow:
-			0 0 0 4px color-mix(in oklab, var(--accent) 14%, transparent),
-			var(--shadow);
+		border-color: var(--accent-line);
 	}
 	.add.invalid {
 		border-color: var(--danger);
@@ -106,6 +101,7 @@
 		background: transparent;
 		padding: 10px 12px;
 		outline: none;
+		font-size: 1rem;
 	}
 	input::placeholder {
 		color: var(--ink-3);
@@ -114,21 +110,26 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		padding: 0 16px;
+		min-height: 46px;
+		padding: 0 18px;
 		border-radius: 12px;
-		background: var(--ink);
-		color: var(--bg);
-		font-weight: 500;
+		background: var(--accent);
+		color: var(--on-accent);
+		font-family: var(--font-display);
+		font-size: 1.05rem;
+		font-weight: 650;
+		box-shadow: var(--lip);
 		transition:
 			opacity 160ms var(--ease-out),
-			transform 120ms var(--ease-out);
+			background-color 160ms var(--ease-out);
 	}
-	button:active:not(:disabled) {
-		transform: scale(0.96);
+	button:hover:not(:disabled) {
+		background: var(--accent-hover);
 	}
 	button:disabled {
-		opacity: 0.25;
-		cursor: default;
+		opacity: 0.4;
+		cursor: not-allowed;
+		box-shadow: none;
 	}
 	.hint {
 		margin: 8px 6px 0;

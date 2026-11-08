@@ -96,8 +96,8 @@
 			opacity: 1;
 		}
 	}
-	.tile:active {
-		transform: scale(0.98);
+	.tile:focus-visible .add {
+		opacity: 1;
 	}
 	.what {
 		flex: 1;
@@ -108,8 +108,8 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		font-weight: 500;
-		font-size: 0.92rem;
+		font-weight: 600;
+		font-size: 0.95rem;
 	}
 	.sub {
 		display: flex;
@@ -138,8 +138,8 @@
 	.add {
 		display: grid;
 		place-items: center;
-		width: 28px;
-		height: 28px;
+		width: 34px;
+		height: 34px;
 		flex: none;
 		border-radius: 50%;
 		color: var(--accent-ink);

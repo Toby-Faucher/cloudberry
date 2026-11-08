@@ -4,6 +4,7 @@
  */
 import { Clock, Player, expectedPositionMs, localNow } from './sync';
 import { ui } from './ui.svelte';
+import { Combo, COMBO_WINDOW_MS } from './game';
 import type { ChatMessage, ClientMsg, Emoji, Job, QueueItem, ServerMsg, StationState } from './types';
 
 export type ConnStatus = 'connecting' | 'live' | 'reconnecting';
@@ -12,6 +13,14 @@ export interface Toast {
 	id: number;
 	text: string;
 	undo?: () => void;
+	/** Styling/motion hint: a poke toast wiggles in. */
+	kind?: 'poke';
+}
+
+/** Bumped on every event so components can replay a one-shot animation for listener `id`. */
+export interface Ping {
+	id: number;
+	seq: number;
 }
 
 export interface Reaction {
@@ -46,6 +55,14 @@ export class Station {
 	chat = $state<ChatMessage[]>([]);
 	/** Reactions currently floating over the art; each removes itself after REACTION_MS. */
 	reactions = $state<Reaction[]>([]);
+	/** Live reaction combo (3+ of the same emoji within 2 s), null when none. */
+	combo = $state<{ emoji: Emoji; count: number } | null>(null);
+	/** Last poke target (everyone wiggles that avatar) and last reactor (avatar bounces). */
+	poked = $state<Ping | null>(null);
+	reacted = $state<Ping | null>(null);
+	private combos = new Combo();
+	private comboTimer: ReturnType<typeof setTimeout> | undefined;
+	private pingSeq = 0;
 
 	readonly clock = new Clock();
 	readonly player: Player;
@@ -58,6 +75,19 @@ export class Station {
 	constructor(readonly name: string) {
 		this.player = new Player(this.clock, (m) => this.showToast(m));
 		this.connect();
+		document.addEventListener('visibilitychange', this.presence);
+	}
+
+	/** Away = tab hidden; everyone sees the avatar fade. */
+	private presence = () => {
+		if (this.ws?.readyState === WebSocket.OPEN)
+			this.ws.send(JSON.stringify({ type: 'presence', away: document.hidden } satisfies ClientMsg));
+	};
+
+	/** Poke someone else (server rate-limits to 1 per 2 s and rejects self). */
+	poke(id: number) {
+		if (id === this.you) return;
+		this.send({ type: 'poke', listener_id: id });
 	}
 
 	send(msg: ClientMsg) {
@@ -67,15 +97,17 @@ export class Station {
 
 	close() {
 		this.closed = true;
+		document.removeEventListener('visibilitychange', this.presence);
+		clearTimeout(this.comboTimer);
 		this.clearTimers();
 		this.ws?.close();
 		this.player.destroy();
 	}
 
 	/** One toast at a time (calm); a new one replaces the old. Undo toasts linger longer. */
-	showToast(text: string, undo?: () => void) {
+	showToast(text: string, undo?: () => void, kind?: Toast['kind']) {
 		const id = ++toastSeq;
-		this.toast = { id, text, undo };
+		this.toast = { id, text, undo, kind };
 		setTimeout(() => this.dismissToast(id), undo ? UNDO_MS : 4000);
 	}
 
@@ -125,11 +157,17 @@ export class Station {
 		this.send({ type: 'react', emoji });
 		// Show ours immediately; the server's echo (if any) is ignored below.
 		this.float(emoji, this.name, true);
+		if (this.you !== null) this.reacted = { id: this.you, seq: ++this.pingSeq };
 	}
 
 	private float(emoji: Emoji, name: string, mine: boolean) {
 		const r = { key: ++reactionSeq, emoji, name, mine, x: Math.random(), drift: Math.random() * 2 - 1 };
 		this.reactions = [...this.reactions.slice(-(MAX_FLOATING - 1)), r];
+		const now = performance.now();
+		this.combos.add(emoji, now);
+		this.combo = this.combos.shown(now) as Station['combo'];
+		clearTimeout(this.comboTimer);
+		this.comboTimer = setTimeout(() => (this.combo = null), COMBO_WINDOW_MS);
 		setTimeout(() => (this.reactions = this.reactions.filter((x) => x.key !== r.key)), REACTION_MS);
 	}
 
@@ -151,6 +189,7 @@ export class Station {
 		ws.onopen = () => {
 			this.attempt = 0;
 			this.status = 'live';
+			if (document.hidden) this.presence();
 			// Burst for a quick initial estimate, then keep refining.
 			for (let i = 0; i < PING_BURST; i++) this.timers.push(setTimeout(this.ping, i * PING_BURST_GAP_MS));
 			this.timers.push(setInterval(this.ping, PING_EVERY_MS));
@@ -186,6 +225,7 @@ export class Station {
 				break;
 			case 'state':
 				this.state = msg.state;
+				ui.dj = msg.state.dj_of_day ?? null;
 				this.jobs = msg.state.jobs;
 				this.player.update(msg.state);
 				break;
@@ -214,7 +254,18 @@ export class Station {
 				this.chat = [...this.chat.slice(-(CHAT_KEEP - 1)), msg.message];
 				break;
 			case 'react':
-				if (msg.listener_id !== this.you) this.float(msg.emoji, msg.name, false);
+				if (msg.listener_id !== this.you) {
+					this.float(msg.emoji, msg.name, false);
+					this.reacted = { id: msg.listener_id, seq: ++this.pingSeq };
+				}
+				break;
+			case 'poke':
+				this.poked = { id: msg.to_id, seq: ++this.pingSeq };
+				if (msg.to_id === this.you) this.showToast(`${msg.from_name} poked you`, undefined, 'poke');
+				else if (msg.from_id === this.you) {
+					const to = this.state?.listeners.find((l) => l.id === msg.to_id)?.name;
+					if (to) this.showToast(`You poked ${to}`);
+				}
 				break;
 		}
 	}

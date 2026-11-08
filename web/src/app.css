@@ -1,35 +1,61 @@
 /* Self-hosted fonts (no Google Fonts requests). */
 @import '@fontsource-variable/inter/wght.css';
-@import '@fontsource-variable/bricolage-grotesque/opsz.css';
+@import '@fontsource-variable/fredoka/wght.css';
 
 /* Registered so track changes cross-fade the tint instead of snapping. */
 @property --track-tint {
 	syntax: '<color>';
 	inherits: true;
-	initial-value: #f97316;
+	initial-value: #f0912b;
 }
 
+/*
+ * Palette: real cloudberry (spec phase 3). Retune the fruit here and everything follows;
+ * components only ever use the semantic names below (--accent*, --blush, --ok/--warn/--bad).
+ */
 :root {
-	--bg: #fbf6f1;
-	--surface: #ffffff;
-	--surface-2: #f5eee7;
-	--ink: #211a16;
-	--ink-2: #6f645c;
-	--ink-3: #a59a91;
-	--line: #ebe2d9;
-	--accent: #f97316;
-	--accent-ink: #c2540a;
-	--accent-soft: #ffeadb;
-	--on-accent: #fffaf5;
-	--danger: #d1432c;
-	--shadow: 0 1px 2px rgb(60 30 10 / 0.04), 0 8px 28px -12px rgb(60 30 10 / 0.14);
+	--berry-300: #fbc77a; /* highlight, glows */
+	--berry-400: #f7ae4a; /* accent text on dark */
+	--berry-500: #f0912b; /* THE accent: fills, bars */
+	--berry-600: #d9741a; /* hover/pressed fill; standalone UI lines on light */
+	--berry-700: #a9550f; /* accent text on light */
+	--blush-500: #e0553a; /* unripe blush: heat (combos, hold-to-skip, live dot) */
 
-	--font-display: 'Bricolage Grotesque Variable', 'Inter Variable', system-ui, sans-serif;
+	--bg: #f5f4f2;
+	--surface: #ffffff;
+	--surface-2: #ebe9e5;
+	--ink: #211a16;
+	--ink-2: #554c45;
+	--ink-3: #6b625b;
+	--line: #e2dfda;
+	--accent: var(--berry-500);
+	--accent-hover: var(--berry-600);
+	/* Accent strokes that must read on their own (progress, rings): >= 3:1 on surface. */
+	--accent-line: var(--berry-600);
+	--accent-ink: var(--berry-700);
+	--accent-soft: #fdf0dc;
+	/* Dark ink on berry in both themes: white on berry-500 is only 2.3:1. */
+	--on-accent: #211a16;
+	--blush: var(--blush-500);
+	--ok: #23a05a;
+	--warn: #e0a21b;
+	--bad: var(--blush-500);
+	--danger: #c53d27;
+	--shadow: 0 6px 16px -8px rgb(40 25 10 / 0.3);
+	--shadow-pop: 0 10px 24px -10px rgb(40 25 10 / 0.4);
+	/* Sticker die-cut: a thick, even outline around the things you can grab. */
+	--die: #fffdf9;
+	--die-cut: 0 0 0 4px var(--die);
+	/* Game-button lip: the fill's own darker bottom edge (flat tone, not a glow). */
+	--lip: inset 0 -5px 0 rgb(110 45 0 / 0.28);
+
+	/* Chunky rounded display (titles, HUD, buttons) to match the sticker wordmark; Inter for text. */
+	--font-display: 'Fredoka Variable', 'Inter Variable', system-ui, sans-serif;
 	--font-body: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
 	--r-sm: 10px;
-	--r-md: 16px;
-	--r-lg: 28px;
+	--r-md: 14px;
+	--r-lg: 24px;
 	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 	--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
@@ -44,19 +70,22 @@
 
 @media (prefers-color-scheme: dark) {
 	:root {
-		--bg: #14110f;
-		--surface: #1d1916;
-		--surface-2: #26201c;
-		--ink: #f4ede6;
-		--ink-2: #ab9f95;
-		--ink-3: #74685f;
-		--line: #2e2723;
-		--accent: #fb8a3c;
-		--accent-ink: #fdac72;
-		--accent-soft: #3a2416;
-		--on-accent: #1a0f07;
+		--bg: #131211;
+		--surface: #1c1a18;
+		--surface-2: #272421;
+		--ink: #f4efe9;
+		--ink-2: #c4b9af;
+		--ink-3: #9a8f86;
+		--line: #312d29;
+		--accent-hover: var(--berry-400);
+		--accent-line: var(--berry-500);
+		--accent-ink: var(--berry-400);
+		--accent-soft: #3a2a18;
+		--ok: #3ccf7a;
+		--warn: #f2c14a;
 		--danger: #f07a62;
-		--shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -14px rgb(0 0 0 / 0.6);
+		--shadow: 0 6px 16px -8px rgb(0 0 0 / 0.6);
+		--shadow-pop: 0 10px 24px -10px rgb(0 0 0 / 0.75);
 		color-scheme: dark;
 	}
 }
@@ -83,8 +112,8 @@ h1,
 h2,
 h3 {
 	font-family: var(--font-display);
-	font-weight: 600;
-	letter-spacing: -0.02em;
+	font-weight: 650;
+	letter-spacing: -0.01em;
 	margin: 0;
 }
 
@@ -102,9 +131,23 @@ button {
 }
 
 :focus-visible {
-	outline: 2px solid var(--accent);
+	outline: 3px solid var(--accent-ink);
 	outline-offset: 2px;
-	border-radius: 6px;
+	border-radius: 8px;
+}
+
+::selection {
+	background: color-mix(in oklab, var(--berry-300) 70%, transparent);
+	color: var(--ink);
+}
+
+input,
+textarea {
+	caret-color: var(--accent-ink);
+}
+
+html {
+	scrollbar-color: color-mix(in oklab, var(--ink-3) 45%, transparent) transparent;
 }
 
 .num {
@@ -113,39 +156,48 @@ button {
 
 .card {
 	background: var(--surface);
-	border: 1px solid var(--line);
 	border-radius: var(--r-lg);
-	box-shadow: var(--shadow);
 }
 
 .section-title {
 	font-family: var(--font-display);
-	font-size: 1.05rem;
-	font-weight: 600;
+	font-size: 1.4rem;
+	font-weight: 650;
 	display: flex;
-	align-items: baseline;
-	gap: 0.5rem;
+	align-items: center;
+	gap: 0.6rem;
 	margin-bottom: 0.75rem;
 }
 
+/* Count next to a section title: a flat number block. */
 .section-title small {
-	font-family: var(--font-body);
-	font-weight: 400;
-	font-size: 0.8rem;
-	color: var(--ink-3);
+	display: inline-grid;
+	place-items: center;
+	min-width: 26px;
+	height: 26px;
+	padding: 0 7px;
+	border-radius: 8px;
+	background: var(--surface-2);
+	font-family: var(--font-display);
+	font-weight: 650;
+	font-size: 0.9rem;
+	color: var(--ink);
+}
+.section-title small:empty {
+	display: none;
 }
 
 .icon-btn {
 	display: inline-grid;
 	place-items: center;
-	width: 32px;
-	height: 32px;
+	width: 40px;
+	height: 40px;
 	border-radius: 999px;
 	color: var(--ink-2);
 	transition:
 		background-color 160ms var(--ease-out),
 		color 160ms var(--ease-out),
-		transform 120ms var(--ease-out);
+		box-shadow 160ms var(--ease-out);
 }
 
 @media (hover: hover) {
@@ -155,13 +207,56 @@ button {
 	}
 }
 
-.icon-btn:active:not(:disabled) {
-	transform: scale(0.92);
+/* Toggled on: berry fill, pressed-in. Unmistakable, not just a colour shift. */
+.icon-btn.on {
+	color: var(--on-accent);
+	background: var(--accent);
+	box-shadow: inset 0 2px 4px rgb(80 30 0 / 0.25);
+}
+@media (hover: hover) {
+	.icon-btn.on:hover:not(:disabled) {
+		color: var(--on-accent);
+		background: var(--accent-hover);
+	}
 }
 
 .icon-btn:disabled {
-	opacity: 0.3;
-	cursor: default;
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* HUD chip: flat block, label + value. */
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	height: 34px;
+	padding: 0 12px;
+	border-radius: 11px;
+	background: var(--surface);
+	font-family: var(--font-display);
+	font-size: 0.78rem;
+	font-weight: 650;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--ink-2);
+	white-space: nowrap;
+}
+.chip b {
+	font-family: var(--font-body);
+	font-size: 0.88rem;
+	font-weight: 700;
+	letter-spacing: 0;
+	text-transform: none;
+	color: var(--ink);
+	font-variant-numeric: tabular-nums;
+}
+.chip .pip {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex: none;
+	background: var(--ink-3);
 }
 
 .sr-only {

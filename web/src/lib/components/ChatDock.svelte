@@ -44,8 +44,7 @@
 		position: sticky;
 		top: 0;
 		height: 100dvh;
-		border-left: 1px solid var(--line);
-		background: color-mix(in oklab, var(--surface) 70%, var(--bg));
+		background: var(--surface);
 	}
 	:global(.chat-scrim) {
 		position: fixed;

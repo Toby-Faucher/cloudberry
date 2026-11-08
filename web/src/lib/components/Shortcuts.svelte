@@ -2,7 +2,7 @@
 	/** Shown in the help dialog. Add a row here when you bind a new key. */
 	export const SHORTCUTS: [keys: string[], what: string][] = [
 		[['Space'], 'Play / pause for everyone'],
-		[['N'], 'Skip (with undo)'],
+		[['N'], 'Hold to skip (with undo)'],
 		[['/'], 'Chat'],
 		[['?'], 'This help'],
 		[['F'], 'Lean-back (fullscreen visualizer)'],
@@ -16,14 +16,25 @@
 	import type { Station } from '#lib/station.svelte.ts';
 	import { focusChat, ui } from '#lib/ui.svelte.ts';
 	import { isTyping, isYouTubeUrl } from '#lib/util.ts';
+	import { pressSkip, releaseSkip } from '#lib/hold.svelte.ts';
+	import { konami } from '#lib/game.ts';
+	import { startBerryRain } from '#lib/motion/smear.ts';
 
 	/** Global keyboard shortcuts, global paste-to-add, and the "?" help dialog. */
 	let { station }: { station: Station } = $props();
 
 	const mac = typeof navigator !== 'undefined' && /Mac|iP(hone|ad)/.test(navigator.platform);
 
+	const code = konami();
+
 	function onkeydown(e: KeyboardEvent) {
-		if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+		if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+		// ↑↑↓↓←→←→BA: local-only cloudberry rain.
+		if (!e.repeat && code(e.key)) {
+			const c = document.getElementById('berry-rain');
+			if (c instanceof HTMLCanvasElement) void startBerryRain(c);
+		}
+		if (e.defaultPrevented) return;
 		if (ui.help || ui.drawer) return; // a dialog owns the keyboard
 		const t = e.target as HTMLElement;
 		switch (e.key) {
@@ -35,7 +46,8 @@
 				break;
 			case 'n':
 			case 'N':
-				station.skip();
+				// Like the button: hold to skip, a tap only shows the hint.
+				if (!e.repeat) pressSkip(station);
 				break;
 			case '/':
 				e.preventDefault(); // don't type the slash into the input we're about to focus
@@ -57,7 +69,7 @@
 	}
 </script>
 
-<svelte:window {onkeydown} {onpaste} />
+<svelte:window {onkeydown} onkeyup={(e) => (e.key === 'n' || e.key === 'N') && releaseSkip()} onblur={releaseSkip} {onpaste} />
 
 <Dialog.Root bind:open={ui.help}>
 	<Dialog.Portal>

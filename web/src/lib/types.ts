@@ -20,6 +20,8 @@ export interface QueueItem {
 export interface Listener {
 	id: number;
 	name: string;
+	/** Tab hidden (sent via `presence`). */
+	away: boolean;
 }
 
 export type JobStatus = 'queued' | 'downloading' | 'done' | 'failed';
@@ -45,6 +47,8 @@ export interface StationState {
 	jobs: Job[];
 	/** Last 20 played, newest first. */
 	history: Track[];
+	/** Whose added tracks got the most reactions today (server local day), or null. */
+	dj_of_day: string | null;
 }
 
 export const REACTIONS = ['🔥', '😂', '❤️', '👏', '🎉', '😴'] as const;
@@ -71,7 +75,9 @@ export type ClientMsg =
 	| { type: 'seek'; position_ms: number }
 	| { type: 'chat'; text: string }
 	| { type: 'react'; emoji: Emoji }
-	| { type: 'insert'; track_id: string; index: number };
+	| { type: 'insert'; track_id: string; index: number }
+	| { type: 'poke'; listener_id: number }
+	| { type: 'presence'; away: boolean };
 
 export type ServerMsg =
 	| { type: 'welcome'; you: number }
@@ -81,4 +87,5 @@ export type ServerMsg =
 	| { type: 'error'; message: string }
 	| { type: 'chat_history'; messages: ChatMessage[] }
 	| { type: 'chat'; message: ChatMessage }
-	| { type: 'react'; listener_id: number; name: string; emoji: Emoji };
+	| { type: 'react'; listener_id: number; name: string; emoji: Emoji }
+	| { type: 'poke'; from_id: number; from_name: string; to_id: number };

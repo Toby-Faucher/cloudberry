@@ -57,8 +57,9 @@ void main() {
 	vec3 tint = uTint;
 	vec3 amber = mix(tint, vec3(1.0, 0.8, 0.5), 0.5);
 	vec3 ember = mix(tint * vec3(0.6, 0.32, 0.26), vec3(0.5, 0.1, 0.16), 0.35);
-	vec3 col = mix(ember, tint, smoothstep(0.25, 0.7, f));
-	col = mix(col, amber, smoothstep(0.5, 0.95, f + 0.3 * length(r) - 0.25));
+	// Posterised: flat tone bands with crisp edges (sticker look), not a soft wash.
+	vec3 col = mix(ember, tint, step(0.45, f));
+	col = mix(col, amber, step(0.66, f + 0.3 * length(r) - 0.25));
 
 	// Treble: sparse glints that twinkle on the bright ridges.
 	vec2 g = p * 26.0;
@@ -67,14 +68,16 @@ void main() {
 	vec2 off = vec2(hash(id + 7.1), hash(id + 3.7)) - 0.5;
 	float d = length(fract(g) - 0.5 - off * 0.6);
 	float tw = 0.5 + 0.5 * sin(uTime * (2.0 + 4.0 * h) + h * 40.0);
-	float spark = smoothstep(0.16, 0.0, d) * step(0.8, h) * tw * smoothstep(0.4, 0.75, f);
+	float spark = step(d, 0.12) * step(0.8, h) * step(0.5, tw) * step(0.55, f);
 	col += vec3(1.0, 0.93, 0.82) * spark * uTreble * 1.8;
 
 	float lift = 0.5 + 0.5 * uEnergy + 0.3 * uBeat;
 	// Light: soft wash. Dark: deep valleys so only the ridges glow, like embers.
 	float glow = lift * mix(0.3 + 0.7 * f, 1.2 * pow(smoothstep(0.2, 0.95, f), 1.6), uDark);
-	vec3 rgb = mix(uBg, col, clamp(glow, 0.0, 1.0)) + amber * uBeat * 0.12 * f;
-	float m = mix(1.0, smoothstep(0.5, 0.1, length(p)) * (0.55 + 0.6 * f), uAura);
+	glow = floor(clamp(glow, 0.0, 1.0) * 3.0 + 0.5) / 3.0;
+	vec3 rgb = mix(uBg, col, glow) + amber * step(0.5, uBeat) * 0.1;
+	// Aura: a crisp blob whose edge wobbles with the field, like a die-cut shape.
+	float m = mix(1.0, step(length(p), 0.36 + 0.12 * f + 0.04 * uBass), uAura);
 	outColor = vec4(rgb * m, m);
 }`;
 
@@ -103,7 +106,7 @@ void main() {
 		gl.useProgram(prog);
 
 		const dark = matchMedia('(prefers-color-scheme: dark)');
-		let bg = cssColor(getComputedStyle(el).getPropertyValue('--bg') || '#fbf6f1');
+		let bg = cssColor(getComputedStyle(el).getPropertyValue('--bg') || '#f5f4f2');
 		const onScheme = () => (bg = cssColor(getComputedStyle(el).getPropertyValue('--bg')));
 		dark.addEventListener('change', onScheme);
 
@@ -199,15 +202,15 @@ void main() {
 		height: 160%;
 	}
 	.css {
-		--tint: #f97316;
+		--tint: var(--berry-500);
+		/* Flat tone bands, hard stops: same posterised look as the shader. */
 		background:
-			radial-gradient(60% 50% at 35% 40%, color-mix(in oklab, var(--tint) 70%, white) 0, transparent 70%),
-			radial-gradient(70% 60% at 65% 65%, var(--tint) 0, transparent 75%);
-		filter: blur(30px);
+			radial-gradient(40% 34% at 35% 40%, var(--berry-300) 0 99%, transparent 100%),
+			radial-gradient(70% 60% at 65% 65%, var(--tint) 0 99%, transparent 100%);
 		will-change: transform, opacity;
 	}
 	.css.aura {
 		border-radius: 50%;
-		background: radial-gradient(closest-side, var(--tint), transparent);
+		background: radial-gradient(closest-side, var(--tint) 0 60%, transparent 61%);
 	}
 </style>

@@ -1,13 +1,14 @@
 <script lang="ts">
-	// The mark: seven beads in a 2-3-2 hex cluster, like the fruit. They breathe out of phase.
-	let { bead = 22, opacity = 0.85 }: { bead?: number; opacity?: number } = $props();
+	// The mark: seven drupelets in a 2-3-2 hex cluster, drawn like a sticker: flat body, flat
+	// shade, one white highlight per bead (hard stops, no soft gradients). Still: no idle motion.
+	let { bead = 22, opacity = 1 }: { bead?: number | string; opacity?: number } = $props();
 	const rows = [2, 3, 2];
 </script>
 
-<div class="berry" style:--b="{bead}px" style:--o={opacity} aria-hidden="true">
-	{#each rows as n, r}
+<div class="berry" style:--b={typeof bead === "number" ? `${bead}px` : bead} style:opacity aria-hidden="true">
+	{#each rows as n, r (r)}
 		<div class="row">
-			{#each Array(n) as _, i}<span style:--i={r * 3 + i}></span>{/each}
+			{#each Array(n) as _, i (i)}<span></span>{/each}
 		</div>
 	{/each}
 </div>
@@ -19,23 +20,17 @@
 	}
 	.row {
 		display: flex;
-		gap: calc(var(--b) * 0.16);
+		gap: calc(var(--b) * 0.06);
 	}
 	.row + .row {
-		margin-top: calc(var(--b) * -0.06);
+		margin-top: calc(var(--b) * -0.12);
 	}
 	span {
 		width: var(--b);
 		height: var(--b);
 		border-radius: 50%;
-		background: var(--accent);
-		opacity: var(--o);
-		animation: breathe 2.8s calc(var(--i) * 0.18s) var(--ease-in-out) infinite;
-	}
-	@keyframes breathe {
-		50% {
-			transform: scale(0.84);
-			opacity: calc(var(--o) * 0.6);
-		}
+		background:
+			radial-gradient(circle at 34% 30%, #fffdf9 0 15%, transparent 16%),
+			radial-gradient(circle at 40% 36%, var(--berry-400) 0 58%, var(--berry-600) 59%);
 	}
 </style>

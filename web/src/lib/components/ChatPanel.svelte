@@ -232,11 +232,11 @@
 		padding: 5px;
 		border-radius: 16px;
 		background: var(--surface-2);
-		border: 1px solid transparent;
+		border: 3px solid transparent;
 		transition: border-color 160ms var(--ease-out);
 	}
 	.compose:focus-within {
-		border-color: color-mix(in oklab, var(--accent) 55%, var(--line));
+		border-color: var(--accent-line);
 		background: var(--surface);
 	}
 	.compose input {
@@ -258,7 +258,7 @@
 	.send {
 		display: grid;
 		place-items: center;
-		width: 36px;
+		width: 40px;
 		border-radius: 12px;
 		background: var(--accent);
 		color: var(--on-accent);
@@ -270,8 +270,5 @@
 		opacity: 0;
 		transform: scale(0.8);
 		cursor: default;
-	}
-	.send:active:not(:disabled) {
-		transform: scale(0.92);
 	}
 </style>

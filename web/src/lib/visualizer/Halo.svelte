@@ -55,14 +55,15 @@
 			const base = C * R0 * (1 + 0.028 * pulse);
 			const inner = base + C * GAP;
 
-			// Tinted bloom behind the ring, breathing with energy and beats. A CSS layer so
+			// Tinted disc behind the ring, breathing with energy and beats. A CSS layer so
 			// per-frame changes are compositor-only opacity, not a full-canvas gradient fill.
 			const tint = `${r} ${gr} ${b}`;
 			if (tint !== lastTint) {
 				lastTint = tint;
-				glowEl.style.background = `radial-gradient(closest-side, rgb(${tint}) ${R0 * 170}%, rgb(${tint} / 0.3) 55%, transparent)`;
+				// Flat sticker disc (hard stops), not a soft glow.
+				glowEl.style.background = `radial-gradient(closest-side, rgb(${tint}) 0 ${R0 * 170}%, rgb(${tint} / 0.45) ${R0 * 170}% 74%, transparent 74%)`;
 			}
-			glowEl.style.opacity = (0.08 + 0.26 * f.energy + 0.12 * pulse).toFixed(3);
+			glowEl.style.opacity = (0.12 + 0.3 * f.energy + 0.12 * pulse).toFixed(3);
 
 			// Spokes: bass at the top, mirrored down both sides, slowly turning.
 			const lw = Math.max(1.5, ((TAU * inner) / (BARS * 2)) * 0.46);
