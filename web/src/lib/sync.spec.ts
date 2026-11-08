@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	bestOffset,
 	ctxToServer,
+	dbToGain,
 	driftMs,
 	expectedPositionMs,
 	makeSample,
@@ -16,14 +17,30 @@ describe('clock offset', () => {
 		expect(makeSample(1000, 1100, 5050)).toEqual({ rtt: 100, offset: 4000 });
 	});
 
-	it('picks the lowest-RTT sample', () => {
+	it('takes the median offset of the 3 lowest-RTT samples', () => {
 		const samples = [
 			{ rtt: 80, offset: 4030 },
 			{ rtt: 12, offset: 4001 },
-			{ rtt: 300, offset: 3900 }
+			{ rtt: 300, offset: 3900 },
+			{ rtt: 15, offset: 4009 },
+			{ rtt: 14, offset: 3950 }, // fast but skewed: the median shrugs it off
+			{ rtt: 40, offset: 4100 }
 		];
 		expect(bestOffset(samples)).toBe(4001);
+	});
+
+	it('copes with fewer than 3 samples', () => {
 		expect(bestOffset([])).toBeNull();
+		expect(bestOffset([{ rtt: 9, offset: 7 }])).toBe(7);
+		expect(bestOffset([{ rtt: 9, offset: 10 }, { rtt: 30, offset: 20 }])).toBe(15);
+	});
+});
+
+describe('track gain', () => {
+	it('converts dB to linear, unity when missing', () => {
+		expect(dbToGain(0)).toBe(1);
+		expect(dbToGain(-6)).toBeCloseTo(0.501, 3);
+		expect(dbToGain(undefined as unknown as number)).toBe(1);
 	});
 });
 

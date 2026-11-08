@@ -1,16 +1,18 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import { fade } from 'svelte/transition';
+	import { Minimize2 } from '@lucide/svelte';
 	import type { Station } from '#lib/station.svelte.ts';
 	import { dur } from '#lib/util.ts';
+	import { lineAt } from '#lib/lyrics.ts';
+	import { ui } from '#lib/ui.svelte.ts';
 	import Art from '#lib/components/Art.svelte';
 	import Berry from '#lib/components/Berry.svelte';
 	import Bloom from './Bloom.svelte';
 	import { follow, frames, reducedMotion } from './analysis.ts';
 	import { setLean, viz } from './state.svelte.ts';
 
-	/** Fullscreen "lean-back" view: big art + title over Bloom. `children` renders under the title (lyrics). */
-	let { station, children }: { station: Station; children?: Snippet } = $props();
+	/** Fullscreen "lean-back" view: big art, title and the current lyric line over Bloom. */
+	let { station }: { station: Station } = $props();
 
 	const cur = $derived(station.state?.current ?? null);
 	let idle = $state(false);
@@ -23,7 +25,7 @@
 		t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
 	function onKey(e: KeyboardEvent) {
-		if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target)) return;
+		if (e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || ui.help || ui.drawer) return;
 		if (e.key === 'f' || e.key === 'F') {
 			e.preventDefault();
 			setLean(!viz.lean);
@@ -46,6 +48,20 @@
 		clearTimeout(idleTimer);
 		idleTimer = window.setTimeout(() => (idle = true), 2500);
 	}
+
+	// Current lyric line (lyrics are fetched by <Lyrics/> into ui.lines).
+	let idx = $state(-1);
+	const lines = $derived(viz.lean && ui.lyrics ? ui.lines : null);
+	$effect(() => {
+		if (!lines) return;
+		let raf = 0;
+		const tick = () => {
+			idx = lineAt(lines, station.positionMs());
+			raf = requestAnimationFrame(tick);
+		};
+		tick();
+		return () => cancelAnimationFrame(raf);
+	});
 
 	$effect(() => {
 		if (!viz.lean) return;
@@ -101,13 +117,18 @@
 					{#if cur}<p>added by {cur.added_by}</p>{/if}
 				</div>
 			{/key}
-			{@render children?.()}
+			{#if lines}
+				<div class="lyric" aria-live="polite">
+					{#key idx}
+						<p in:fade={{ duration: dur(360) }}>{lines[idx]?.text || '♪'}</p>
+					{/key}
+					<p class="next" aria-hidden="true">{lines[idx + 1]?.text ?? ''}</p>
+				</div>
+			{/if}
 		</div>
 
 		<button class="exit" onclick={() => setLean(false)} aria-label="Exit lean-back (Esc)" title="Exit (Esc)">
-			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-				<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
-			</svg>
+			<Minimize2 size={18} aria-hidden="true" />
 		</button>
 	</div>
 {/if}
@@ -176,6 +197,25 @@
 		margin: 10px 0 0;
 		color: var(--ink-2);
 		font-size: clamp(0.95rem, 0.8rem + 0.5vw, 1.15rem);
+	}
+	.lyric {
+		display: grid;
+		gap: 6px;
+		min-height: 4.2em;
+	}
+	.lyric p {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: clamp(1.2rem, 0.9rem + 1.2vw, 1.9rem);
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		text-wrap: balance;
+		text-shadow: 0 2px 24px color-mix(in oklab, var(--bg) 60%, transparent);
+	}
+	.lyric .next {
+		font-size: clamp(0.95rem, 0.8rem + 0.6vw, 1.25rem);
+		color: var(--ink-2);
+		font-weight: 500;
 	}
 	.exit {
 		position: absolute;

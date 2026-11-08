@@ -2,10 +2,14 @@
 	import { onMount } from 'svelte';
 	import { Slider } from 'bits-ui';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { expectedPositionMs } from '#lib/sync.ts';
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
-	import Icon from './Icon.svelte';
+	import { MicVocal, Pause, Play, SkipForward, Volume2 } from '@lucide/svelte';
+	import { store, ui } from '#lib/ui.svelte.ts';
+	import Avatar from './Avatar.svelte';
+	import Lyrics from './Lyrics.svelte';
+	import ReactionBar from './ReactionBar.svelte';
+	import ReactionFloats from './ReactionFloats.svelte';
 	import { ModeSwitch, Visualizer, startAnalysis, stopAnalysis, viz } from '#lib/visualizer/index.ts';
 	import Berry from './Berry.svelte';
 
@@ -25,8 +29,7 @@
 	onMount(() => {
 		let raf = 0;
 		const tick = () => {
-			const st = station.state;
-			pos = st?.current ? Math.max(0, expectedPositionMs(st, station.clock.serverNow())) : 0;
+			pos = station.positionMs();
 			raf = requestAnimationFrame(tick);
 		};
 		raf = requestAnimationFrame(tick);
@@ -91,6 +94,7 @@
 				</div>
 			{/key}
 		</div>
+		<ReactionFloats {station} />
 	</div>
 
 	<div class="stack meta">
@@ -98,7 +102,7 @@
 			<div in:trackIn out:trackOut>
 				{#if cur}
 					<h1 class="title" title={cur.track.title}>{cur.track.title}</h1>
-					<p class="by">added by {cur.added_by}</p>
+					<p class="by"><Avatar name={cur.added_by} size={18} /> added by {cur.added_by}</p>
 				{:else}
 					<h1 class="title">The air is quiet</h1>
 					<p class="by">
@@ -108,6 +112,8 @@
 			</div>
 		{/key}
 	</div>
+
+	<Lyrics {station} />
 
 	<div
 		class="progress"
@@ -131,7 +137,7 @@
 
 	<div class="controls">
 		<div class="vol">
-			<Icon name="volume" size={16} />
+			<Volume2 size={16} />
 			<Slider.Root type="single" bind:value={volume} min={0} max={1} step={0.01} class="vol-slider" aria-label="Volume (only for you)">
 				<span class="vol-rail"><Slider.Range class="vol-range" /></span>
 				<Slider.Thumb index={0} class="vol-thumb" />
@@ -142,23 +148,42 @@
 			class="play"
 			aria-label={s?.playing ? 'Pause for everyone' : 'Play for everyone'}
 			disabled={!cur && !s?.queue.length}
-			onclick={() => station.send({ type: s?.playing ? 'pause' : 'play' })}
+			onclick={() => station.togglePlay()}
 		>
-			<Icon name={s?.playing ? 'pause' : 'play'} size={26} />
+			{#if s?.playing}<Pause size={26} fill="currentColor" strokeWidth={0} />{:else}<Play
+					size={26}
+					fill="currentColor"
+					strokeWidth={0}
+					class="play-glyph"
+				/>{/if}
 		</button>
 
 		<div class="right">
+			{#if ui.lines}
+				<button
+					class="icon-btn"
+					class:on={ui.lyrics}
+					aria-label="Lyrics"
+					aria-pressed={ui.lyrics}
+					title={ui.lyrics ? 'Hide lyrics' : 'Show lyrics'}
+					onclick={() => store('cloudberry.lyrics', (ui.lyrics = !ui.lyrics))}
+				>
+					<MicVocal size={18} />
+				</button>
+			{/if}
 			<button
 				class="icon-btn skip"
 				aria-label="Skip for everyone"
 				title="Skip"
 				disabled={!cur}
-				onclick={() => station.send({ type: 'skip' })}
+				onclick={() => station.skip()}
 			>
-				<Icon name="skip" size={20} />
+				<SkipForward size={20} fill="currentColor" />
 			</button>
 		</div>
 	</div>
+
+	<ReactionBar {station} />
 
 	{#if viz.mode === 'bars'}<Visualizer mode="bars" />{/if}
 	<ModeSwitch />
@@ -181,7 +206,7 @@
 		position: absolute;
 		inset: -24%;
 		border-radius: 50%;
-		background: radial-gradient(closest-side, var(--accent), transparent);
+		background: radial-gradient(closest-side, var(--track-tint), transparent);
 		filter: blur(40px);
 		opacity: calc(0.3 + var(--energy) * 1.4);
 		transform: scale(calc(0.8 + var(--energy) * 0.6));
@@ -251,6 +276,10 @@
 		text-wrap: balance;
 	}
 	.by {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
 		margin: 6px 0 0;
 		color: var(--ink-2);
 		font-size: 0.9rem;
@@ -319,6 +348,15 @@
 	.right {
 		display: flex;
 		justify-content: flex-end;
+		align-items: center;
+		gap: 2px;
+	}
+	.right .on {
+		color: var(--accent-ink);
+	}
+	/* The triangle's visual centre sits left of its box. */
+	.play :global(.play-glyph) {
+		translate: 2px 0;
 	}
 	.skip {
 		width: 44px;

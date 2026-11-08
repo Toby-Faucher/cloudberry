@@ -9,6 +9,13 @@
 	import Library from '#lib/components/Library.svelte';
 	import Listeners from '#lib/components/Listeners.svelte';
 	import Berry from '#lib/components/Berry.svelte';
+	import History from '#lib/components/History.svelte';
+	import HeaderTools from '#lib/components/HeaderTools.svelte';
+	import ChatDock from '#lib/components/ChatDock.svelte';
+	import Toast from '#lib/components/Toast.svelte';
+	import Shortcuts from '#lib/components/Shortcuts.svelte';
+	import Integrations from '#lib/components/Integrations.svelte';
+	import { ui } from '#lib/ui.svelte.ts';
 	import { Backdrop, LeanBack } from '#lib/visualizer/index.ts';
 
 	const NAME_KEY = 'cloudberry.name';
@@ -71,39 +78,39 @@
 {:else}
 	<Backdrop />
 	<LeanBack {station} />
-	<div class="app" in:fade={{ duration: dur(400) }}>
-		<header>
-			<div class="brand">
-				<span class="dot" aria-hidden="true"></span>
-				<span class="wordmark small">cloudberry</span>
-			</div>
-			<div class="head-right">
-				<Listeners {station} />
-				<span class="status {station.status}" role="status" title="Connection: {statusLabel[station.status]}">
-					<span class="pip"></span><span class="status-text">{statusLabel[station.status]}</span>
-				</span>
-				<button class="link" onclick={changeName}>{name}</button>
-			</div>
-		</header>
-
-		<main class="grid">
-			<div class="left">
-				<NowPlaying {station} />
-			</div>
-			<div class="right">
-				<AddLink {station} />
-				<Queue {station} />
-				<Library {station} />
-			</div>
-		</main>
-
-		{#if station.toast}
-			{#key station.toast.id}
-				<div class="toast" role="alert" in:fly={{ y: 16, duration: dur(260), easing: cubicOut }} out:fade={{ duration: dur(200) }}>
-					{station.toast.text}
+	<div class="shell" class:docked={ui.wide && ui.dock} in:fade={{ duration: dur(400) }}>
+		<div class="app">
+			<header>
+				<div class="brand">
+					<span class="dot" aria-hidden="true"></span>
+					<span class="wordmark small">cloudberry</span>
 				</div>
-			{/key}
-		{/if}
+				<div class="head-right">
+					<Listeners {station} />
+					<HeaderTools {station} />
+					<span class="status {station.status}" role="status" title="Connection: {statusLabel[station.status]}">
+						<span class="pip"></span><span class="status-text">{statusLabel[station.status]}</span>
+					</span>
+					<button class="link" onclick={changeName}>{name}</button>
+				</div>
+			</header>
+
+			<main class="grid">
+				<div class="left">
+					<NowPlaying {station} />
+				</div>
+				<div class="right">
+					<AddLink {station} />
+					<Queue {station} />
+					<History {station} />
+					<Library {station} />
+				</div>
+			</main>
+		</div>
+		<ChatDock {station} />
+		<Toast {station} />
+		<Shortcuts {station} />
+		<Integrations {station} />
 	</div>
 {/if}
 
@@ -232,8 +239,15 @@
 	}
 
 	/* ---------- app ---------- */
-	.app {
+	.shell {
 		position: relative; /* paints above <Backdrop/> */
+	}
+	.shell.docked {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 340px;
+		align-items: start;
+	}
+	.app {
 		max-width: 1180px;
 		margin: 0 auto;
 		padding: 20px 32px 64px;
@@ -302,21 +316,6 @@
 		display: grid;
 		gap: 36px;
 		min-width: 0;
-	}
-
-	.toast {
-		position: fixed;
-		left: 50%;
-		bottom: max(24px, env(safe-area-inset-bottom));
-		translate: -50% 0;
-		max-width: calc(100% - 32px);
-		padding: 10px 16px;
-		border-radius: 12px;
-		background: var(--ink);
-		color: var(--bg);
-		font-size: 0.88rem;
-		box-shadow: var(--shadow);
-		z-index: 40;
 	}
 
 	@media (max-width: 880px) {

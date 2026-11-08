@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # --- 4. runtime ------------------------------------------------------------------
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --uid 10001 --user-group --create-home --home-dir /home/cloudberry cloudberry
 # "latest" is resolved at build time; rebuild the image to pick up a new yt-dlp.

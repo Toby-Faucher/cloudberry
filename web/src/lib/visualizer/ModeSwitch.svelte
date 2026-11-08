@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Maximize2 } from '@lucide/svelte';
 	import { MODES, setLean, setMode, viz } from './state.svelte.ts';
 
 	const labels = { halo: 'Halo', bloom: 'Bloom', bars: 'Bars' };
@@ -13,9 +14,7 @@
 		{/each}
 	</div>
 	<button class="lean" onclick={() => setLean(true)} aria-label="Lean back (F)" title="Lean back (F)">
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-			<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-		</svg>
+		<Maximize2 size={16} aria-hidden="true" />
 	</button>
 </div>
 

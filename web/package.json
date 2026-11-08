@@ -29,6 +29,11 @@
 		"ws": "^8.22.1"
 	},
 	"dependencies": {
-		"bits-ui": "^2.20.6"
+		"@fontsource-variable/bricolage-grotesque": "^5.3.0",
+		"@fontsource-variable/inter": "^5.3.0",
+		"@lucide/svelte": "^1.70.0",
+		"bits-ui": "^2.20.6",
+		"fast-average-color": "^9.6.0",
+		"svelte-dnd-action": "^0.9.80"
 	}
 }

@@ -2,49 +2,40 @@
 	import { flip } from 'svelte/animate';
 	import { fly, scale } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
+	import { dndzone, SHADOW_ITEM_MARKER_PROPERTY_NAME, type DndEvent } from 'svelte-dnd-action';
+	import { ChevronDown, ChevronUp, GripVertical, X } from '@lucide/svelte';
 	import type { Station } from '#lib/station.svelte.ts';
 	import type { QueueItem } from '#lib/types.ts';
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
-	import Icon from './Icon.svelte';
+	import Avatar from './Avatar.svelte';
 
 	let { station }: { station: Station } = $props();
 
-	// Server order, overridden locally while dragging / until the next state arrives (optimistic).
-	let items = $derived<QueueItem[]>(station.state?.queue ?? []);
-	let dragId = $state<number | null>(null);
-	let dragFrom = -1;
+	type Row = { id: number; q: QueueItem; [SHADOW_ITEM_MARKER_PROPERTY_NAME]?: boolean };
+	// Server order, overridden locally while dragging and until the next state arrives
+	// (the server's answer always wins).
+	let items = $derived<Row[]>((station.state?.queue ?? []).map((q) => ({ id: q.queue_id, q })));
+	const flipMs = dur(220);
 
-	function moveLocal(from: number, to: number) {
+	function consider(e: CustomEvent<DndEvent<Row>>) {
+		items = e.detail.items;
+	}
+	function finalize(e: CustomEvent<DndEvent<Row>>) {
+		items = e.detail.items;
+		const id = Number(e.detail.info.id);
+		const to = items.findIndex((r) => r.id === id);
+		const from = station.state?.queue.findIndex((q) => q.queue_id === id) ?? -1;
+		if (to >= 0 && from >= 0 && to !== from) station.send({ type: 'move', queue_id: id, to_index: to });
+	}
+
+	/** Buttons (keyboard / touch fallback). to_index = final 0-based position in the upcoming queue. */
+	function move(row: Row, from: number, to: number) {
+		if (to < 0 || to >= items.length || from === to) return;
 		const next = [...items];
 		next.splice(to, 0, ...next.splice(from, 1));
 		items = next;
-	}
-
-	/** to_index = final 0-based position in the upcoming queue. */
-	function move(item: QueueItem, from: number, to: number) {
-		if (to < 0 || to >= items.length || from === to) return;
-		moveLocal(from, to);
-		station.send({ type: 'move', queue_id: item.queue_id, to_index: to });
-	}
-
-	function onDragStart(e: DragEvent, item: QueueItem, i: number) {
-		dragId = item.queue_id;
-		dragFrom = i;
-		e.dataTransfer!.effectAllowed = 'move';
-		e.dataTransfer!.setData('text/plain', String(item.queue_id));
-	}
-	function onDragOver(e: DragEvent, i: number) {
-		if (dragId === null) return;
-		e.preventDefault();
-		const from = items.findIndex((q) => q.queue_id === dragId);
-		if (from !== i) moveLocal(from, i); // live reorder; flip animates neighbours
-	}
-	function onDragEnd() {
-		if (dragId === null) return;
-		const to = items.findIndex((q) => q.queue_id === dragId);
-		if (to !== dragFrom && to >= 0) station.send({ type: 'move', queue_id: dragId, to_index: to });
-		dragId = null;
+		station.send({ type: 'move', queue_id: row.id, to_index: to });
 	}
 </script>
 
@@ -56,44 +47,50 @@
 	{#if items.length === 0}
 		<p class="empty" in:fly={{ y: 4, duration: dur(200) }}>Nothing queued. Add a link above or pick something from the library.</p>
 	{:else}
-		<ol class="list">
-			{#each items as item, i (item.queue_id)}
+		<ol
+			class="list"
+			aria-label="Queue, drag to reorder"
+			use:dndzone={{
+				items,
+				flipDurationMs: flipMs,
+				type: 'queue',
+				dropTargetStyle: {},
+				transformDraggedElement: (el) => el?.classList.add('queue-dragged')
+			}}
+			onconsider={consider}
+			onfinalize={finalize}
+		>
+			{#each items as row, i (row.id)}
 				<li
 					class="row"
-					class:dragging={dragId === item.queue_id}
-					draggable="true"
-					ondragstart={(e) => onDragStart(e, item, i)}
-					ondragover={(e) => onDragOver(e, i)}
-					ondrop={(e) => e.preventDefault()}
-					ondragend={onDragEnd}
-					animate:flip={{ duration: dur(280), easing: cubicOut }}
+					class:shadow={row[SHADOW_ITEM_MARKER_PROPERTY_NAME]}
+					animate:flip={{ duration: flipMs, easing: cubicOut }}
 					in:fly={{ x: -12, duration: dur(320), easing: cubicOut }}
 					out:scale={{ start: 0.96, duration: dur(200), opacity: 0 }}
 				>
-					<span class="grip" aria-hidden="true"><Icon name="grip" size={16} /></span>
-					<Art track={item.track} size={40} />
+					<span class="grip" aria-hidden="true"><GripVertical size={16} /></span>
+					<Art track={row.q.track} size={40} />
 					<span class="what">
-						<span class="name" title={item.track.title}>{item.track.title}</span>
-						<span class="sub"><span class="num">{fmtTime(item.track.duration_ms)}</span> · {item.added_by}</span>
+						<span class="name" title={row.q.track.title}>{row.q.track.title}</span>
+						<span class="sub">
+							<Avatar name={row.q.added_by} size={16} />
+							<span class="by">{row.q.added_by}</span> · <span class="num">{fmtTime(row.q.track.duration_ms)}</span>
+						</span>
 					</span>
 					<span class="actions">
-						<button class="icon-btn" aria-label="Move {item.track.title} up" disabled={i === 0} onclick={() => move(item, i, i - 1)}>
-							<Icon name="up" size={16} />
+						<button class="icon-btn" aria-label="Move {row.q.track.title} up" disabled={i === 0} onclick={() => move(row, i, i - 1)}>
+							<ChevronUp size={16} />
 						</button>
 						<button
 							class="icon-btn"
-							aria-label="Move {item.track.title} down"
+							aria-label="Move {row.q.track.title} down"
 							disabled={i === items.length - 1}
-							onclick={() => move(item, i, i + 1)}
+							onclick={() => move(row, i, i + 1)}
 						>
-							<Icon name="down" size={16} />
+							<ChevronDown size={16} />
 						</button>
-						<button
-							class="icon-btn remove"
-							aria-label="Remove {item.track.title} from queue"
-							onclick={() => station.send({ type: 'remove', queue_id: item.queue_id })}
-						>
-							<Icon name="x" size={16} />
+						<button class="icon-btn remove" aria-label="Remove {row.q.track.title} from queue" onclick={() => station.remove(row.q)}>
+							<X size={16} />
 						</button>
 					</span>
 				</li>
@@ -119,6 +116,9 @@
 		display: grid;
 		gap: 4px;
 	}
+	.list:focus-visible {
+		outline-offset: 4px;
+	}
 	.row {
 		display: flex;
 		align-items: center;
@@ -129,8 +129,7 @@
 		border: 1px solid transparent;
 		transition:
 			background-color 160ms var(--ease-out),
-			box-shadow 200ms var(--ease-out),
-			opacity 160ms;
+			border-color 160ms var(--ease-out);
 	}
 	@media (hover: hover) {
 		.row:hover {
@@ -140,9 +139,21 @@
 			opacity: 1;
 		}
 	}
-	.row.dragging {
-		opacity: 0.55;
-		box-shadow: 0 0 0 2px var(--accent);
+	/* The gap the dragged row will drop into. */
+	.row.shadow {
+		visibility: visible !important;
+		background: transparent;
+		border: 1px dashed color-mix(in oklab, var(--accent) 50%, var(--line));
+	}
+	.row.shadow > * {
+		visibility: hidden;
+	}
+	/* The floating clone the library appends to <body>. */
+	:global(.queue-dragged) {
+		box-shadow:
+			0 0 0 1px var(--line),
+			0 18px 40px -16px rgb(60 30 10 / 0.35) !important;
+		cursor: grabbing;
 	}
 	.grip {
 		color: var(--ink-3);
@@ -163,8 +174,18 @@
 		font-weight: 500;
 	}
 	.sub {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 		color: var(--ink-3);
 		font-size: 0.8rem;
+		white-space: nowrap;
+		min-width: 0;
+	}
+	.by {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		color: var(--ink-2);
 	}
 	.actions {
 		display: flex;

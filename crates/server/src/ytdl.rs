@@ -17,7 +17,7 @@ const HOSTS: [&str; 5] = [
 ];
 const MAX_DURATION_MS: u64 = 20 * 60 * 1000;
 
-fn is_video_id(s: &str) -> bool {
+pub fn is_video_id(s: &str) -> bool {
     s.len() == 11
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
@@ -99,7 +99,16 @@ pub async fn worker(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<DlReque
                 )
                 .await
                 {
-                    Ok(r) => r,
+                    Ok(Ok(mut t)) => {
+                        let mp3 = shared.cfg.music_dir.join(format!("{}.mp3", t.id));
+                        match crate::loudness::measure(&mp3).await {
+                            Ok(g) => t.gain_db = g,
+                            // shortcut: stored as 0 and never retried; fine while ffmpeg works for yt-dlp too
+                            Err(e) => tracing::warn!(id = %t.id, "loudness: {e}"),
+                        }
+                        Ok(t)
+                    }
+                    Ok(Err(e)) => Err(e),
                     Err(_) => Err("download timed out".into()),
                 }
             }
@@ -226,6 +235,7 @@ async fn download(shared: &Arc<Shared>, job_id: u64, id: &str) -> Result<Track, 
         thumbnail: dir.join(format!("{id}.jpg")).is_file(),
         added_by: String::new(), // filled in by finish_job
         added_at: now_ms() as u64,
+        gain_db: 0.0, // measured by the worker
     })
 }
 
@@ -240,7 +250,7 @@ fn parse_progress(p: &str) -> Option<f32> {
 /// Create a queued job, or enqueue straight away if the track is already in the library.
 pub fn handle_add(shared: &Arc<Shared>, url: &str, added_by: &str) -> Result<(), String> {
     let id = video_id(url).ok_or("Not a valid YouTube video link")?;
-    if shared.enqueue(&id, added_by).is_ok() {
+    if shared.enqueue(&id, added_by, usize::MAX).is_ok() {
         return Ok(());
     }
     let job = Job {

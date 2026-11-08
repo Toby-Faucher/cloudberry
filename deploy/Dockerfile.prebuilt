@@ -1,0 +1,27 @@
+# Runtime-only image from artifacts built by scripts/deploy.sh (static musl binary + web build),
+# for hosts too small to compile Rust. The full from-source build is ../Dockerfile.
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates tzdata \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 10001 --user-group --create-home --home-dir /home/cloudberry cloudberry
+# "latest" is resolved at build time; rebuild the image to pick up a new yt-dlp.
+ADD --chmod=755 https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux /usr/local/bin/yt-dlp
+# yt-dlp needs a JS runtime (deno by default) to solve YouTube challenges.
+COPY --from=denoland/deno:bin-2.9.8 /deno /usr/local/bin/deno
+COPY --chmod=755 cloudberry /usr/local/bin/cloudberry
+COPY web/build /app/web/build
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+ENV CLOUDBERRY_MUSIC_DIR=/data/music \
+    CLOUDBERRY_DB_PATH=/data/cloudberry.db \
+    CLOUDBERRY_STATIC_DIR=/app/web/build \
+    CLOUDBERRY_BIND=0.0.0.0:8080 \
+    CLOUDBERRY_YTDLP=yt-dlp \
+    HOME=/home/cloudberry
+WORKDIR /app
+VOLUME /data
+EXPOSE 8080
+# Starts as root only to fix /data ownership, then drops to uid 10001 (see entrypoint).
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["cloudberry"]

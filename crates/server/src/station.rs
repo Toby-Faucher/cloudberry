@@ -12,6 +12,9 @@ use tokio::sync::{broadcast, mpsc};
 
 const TRACK_LEAD_MS: f64 = 1500.0;
 const PLAY_LEAD_MS: f64 = 300.0;
+const HISTORY_LEN: usize = 20;
+const CHAT_KEEP: i64 = 500;
+const CHAT_HISTORY: i64 = 100;
 
 pub fn now_ms() -> f64 {
     SystemTime::now()
@@ -29,6 +32,8 @@ pub struct Track {
     pub thumbnail: bool,
     pub added_by: String,
     pub added_at: u64,
+    /// Loudness normalisation for clients' GainNode; 0 until measured.
+    pub gain_db: f32,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -42,6 +47,7 @@ pub struct QueueItem {
 pub struct Listener {
     pub id: u64,
     pub name: String,
+    pub away: bool,
 }
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq)]
@@ -75,6 +81,10 @@ pub struct Station {
     pub listeners: Vec<Listener>,
     pub library: Vec<Track>,
     pub jobs: Vec<Job>,
+    /// Last played tracks (left `current` by ending, skip or remove), newest first.
+    pub history: Vec<Track>,
+    /// Whose queued tracks got the most reactions today (server local day).
+    pub dj_of_day: Option<String>,
     #[serde(skip)]
     next_id: u64,
     #[serde(skip)]
@@ -164,12 +174,17 @@ impl Station {
 
     /// Append to the queue; an idle station starts playing it.
     pub fn push(&mut self, track: Track, added_by: &str, now: f64) {
+        self.insert(track, added_by, usize::MAX, now);
+    }
+
+    /// Insert into the queue at `index` (clamped); an idle station starts playing it.
+    pub fn insert(&mut self, track: Track, added_by: &str, index: usize, now: f64) {
         let item = QueueItem {
             queue_id: self.next_id(),
             track,
             added_by: added_by.to_string(),
         };
-        self.queue.push(item);
+        self.queue.insert(index.min(self.queue.len()), item);
         if self.current.is_none() {
             self.advance(now, true);
         }
@@ -190,6 +205,16 @@ impl Station {
         self.queue.len() != before
     }
 
+    pub fn set_gain(&mut self, id: &str, gain_db: f32) {
+        let items = self.queue.iter_mut().chain(&mut self.current);
+        let tracks = self.library.iter_mut().chain(&mut self.history);
+        for t in tracks.chain(items.map(|q| &mut q.track)) {
+            if t.id == id {
+                t.gain_db = gain_db;
+            }
+        }
+    }
+
     pub fn move_item(&mut self, queue_id: u64, to_index: usize) -> bool {
         let Some(from) = self.queue.iter().position(|q| q.queue_id == queue_id) else {
             return false;
@@ -207,6 +232,16 @@ pub struct Shared {
     pub tx: broadcast::Sender<Utf8Bytes>,
     pub dl_tx: mpsc::UnboundedSender<DlRequest>,
     pub cfg: Config,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ChatMessage {
+    pub id: u64,
+    /// "user" or "event"
+    pub kind: &'static str,
+    pub name: String,
+    pub text: String,
+    pub at: u64,
 }
 
 pub fn state_msg(st: &Station) -> Utf8Bytes {
@@ -241,8 +276,14 @@ impl Shared {
     pub fn change(self: &Arc<Self>, f: impl FnOnce(&mut Station, f64) -> bool) -> bool {
         let now = now_ms();
         let mut st = self.lock();
+        let before = st.current.as_ref().map(|c| (c.queue_id, c.track.clone()));
         if !f(&mut st, now) {
             return false;
+        }
+        if let Some((qid, track)) = before
+            && st.current.as_ref().map(|c| c.queue_id) != Some(qid)
+        {
+            self.record_played(&mut st, track, now);
         }
         self.persist(&st, now);
         self.schedule(&mut st, now);
@@ -275,27 +316,93 @@ impl Shared {
     pub fn join(&self, name: String) -> u64 {
         let mut st = self.lock();
         let id = st.next_id();
-        st.listeners.push(Listener { id, name });
+        st.listeners.push(Listener {
+            id,
+            name,
+            away: false,
+        });
         self.broadcast_state(&st);
         id
     }
 
-    pub fn leave(&self, id: u64) {
+    /// Remove a listener; the last one leaving pauses the station. Returns whether it paused.
+    pub fn leave(self: &Arc<Self>, id: u64) -> bool {
+        let mut paused = false;
+        self.change(|st, now| {
+            st.listeners.retain(|l| l.id != id);
+            if st.listeners.is_empty() && st.playing {
+                st.pause(now);
+                paused = true;
+            }
+            true
+        });
+        paused
+    }
+
+    pub fn set_away(&self, id: u64, away: bool) {
         let mut st = self.lock();
-        st.listeners.retain(|l| l.id != id);
+        if let Some(l) = st.listeners.iter_mut().find(|l| l.id == id) {
+            l.away = away;
+        }
         self.broadcast_state(&st);
     }
 
-    pub fn enqueue(self: &Arc<Self>, track_id: &str, added_by: &str) -> Result<(), String> {
-        let mut ok = false;
-        self.change(|st, now| {
-            if let Some(t) = st.track(track_id).cloned() {
-                st.push(t, added_by, now);
-                ok = true;
+    /// Credit a reaction to whoever queued the current track (ignored when nothing is current).
+    pub fn count_reaction(&self) {
+        let mut st = self.lock();
+        let Some(dj) = st.current.as_ref().map(|c| c.added_by.clone()) else {
+            return;
+        };
+        let db = self.db();
+        let r = db.execute(
+            "INSERT INTO reactions VALUES (date('now', 'localtime'), ?1, 1, ?2)
+                 ON CONFLICT(day, name) DO UPDATE SET count = count + 1, last_at = excluded.last_at",
+            params![dj, now_ms() as u64],
+        );
+        if let Err(e) = r {
+            tracing::error!("saving reaction: {e}");
+        }
+        let top = dj_of_day(&db);
+        drop(db);
+        if top != st.dj_of_day {
+            st.dj_of_day = top;
+            self.broadcast_state(&st);
+        }
+    }
+
+    /// Re-read today's DJ just after each local midnight.
+    pub async fn dj_rollover(self: Arc<Self>) {
+        loop {
+            let secs = secs_to_local_midnight(&self.db());
+            tokio::time::sleep(Duration::from_secs_f64(secs.max(0.0) + 1.0)).await;
+            let mut st = self.lock();
+            let top = dj_of_day(&self.db());
+            if top != st.dj_of_day {
+                st.dj_of_day = top;
+                self.broadcast_state(&st);
             }
-            ok
+        }
+    }
+
+    /// Queue a library track at `index` (clamped; `usize::MAX` appends) and post an event.
+    pub fn enqueue(
+        self: &Arc<Self>,
+        track_id: &str,
+        added_by: &str,
+        index: usize,
+    ) -> Result<(), String> {
+        let mut title = None;
+        self.change(|st, now| {
+            let Some(t) = st.track(track_id).cloned() else {
+                return false;
+            };
+            title = Some(t.title.clone());
+            st.insert(t, added_by, index, now);
+            true
         });
-        ok.then_some(()).ok_or_else(|| "Unknown track".into())
+        let title = title.ok_or("Unknown track")?;
+        self.event(added_by, &format!("added {title}"));
+        Ok(())
     }
 
     pub fn add_job(&self, mut job: Job) -> u64 {
@@ -338,9 +445,10 @@ impl Shared {
                 self.insert_track(&track);
                 st.library.insert(0, track.clone());
             }
-            st.push(track, &added_by, now);
+            st.push(track.clone(), &added_by, now);
             true
         });
+        self.event(&added_by, &format!("added {}", track.title));
     }
 
     pub fn fail_job(self: &Arc<Self>, id: u64, error: String) {
@@ -364,19 +472,131 @@ impl Shared {
 
     fn insert_track(&self, t: &Track) {
         let r = self.db().execute(
-            "INSERT OR REPLACE INTO tracks VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO tracks
+                 (id, title, duration_ms, thumbnail, added_by, added_at, gain_db)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 t.id,
                 t.title,
                 t.duration_ms,
                 t.thumbnail,
                 t.added_by,
-                t.added_at
+                t.added_at,
+                t.gain_db
             ],
         );
         if let Err(e) = r {
             tracing::error!("saving track: {e}");
         }
+    }
+
+    fn record_played(&self, st: &mut Station, track: Track, now: f64) {
+        let db = self.db();
+        let r = db
+            .execute(
+                "INSERT INTO history (track_id, played_at) VALUES (?1, ?2)",
+                params![track.id, now as u64],
+            )
+            .and_then(|_| {
+                db.execute(
+                    "DELETE FROM history WHERE rowid NOT IN
+                         (SELECT rowid FROM history ORDER BY rowid DESC LIMIT ?1)",
+                    [HISTORY_LEN],
+                )
+            });
+        if let Err(e) = r {
+            tracing::error!("saving history: {e}");
+        }
+        st.history.insert(0, track);
+        st.history.truncate(HISTORY_LEN);
+    }
+
+    /// Persist a chat message (keeping the last 500) and broadcast it.
+    pub fn post_chat(&self, kind: &'static str, name: &str, text: &str) {
+        let at = now_ms() as u64;
+        let db = self.db(); // held while sending so `subscribe_with_history` can't interleave
+        let r = db
+            .execute(
+                "INSERT INTO chat (kind, name, text, at) VALUES (?1, ?2, ?3, ?4)",
+                params![kind, name, text, at],
+            )
+            .and_then(|_| {
+                let id = db.last_insert_rowid();
+                db.execute("DELETE FROM chat WHERE id <= ?1", [id - CHAT_KEEP])?;
+                Ok(id as u64)
+            });
+        match r {
+            Ok(id) => {
+                let message = ChatMessage {
+                    id,
+                    kind,
+                    name: name.to_string(),
+                    text: text.to_string(),
+                    at,
+                };
+                self.send(
+                    json!({ "type": "chat", "message": message })
+                        .to_string()
+                        .into(),
+                );
+            }
+            Err(e) => tracing::error!("saving chat: {e}"),
+        }
+    }
+
+    pub fn event(&self, name: &str, text: &str) {
+        self.post_chat("event", name, text);
+    }
+
+    /// Subscribe to broadcasts and fetch the last 100 chat messages (oldest first) atomically,
+    /// so no message shows up both in the history and in the subscription.
+    pub fn subscribe_with_history(&self) -> (broadcast::Receiver<Utf8Bytes>, Vec<ChatMessage>) {
+        let db = self.db();
+        let rx = self.tx.subscribe();
+        let msgs = db
+            .prepare(
+                "SELECT id, kind, name, text, at FROM
+                     (SELECT * FROM chat ORDER BY id DESC LIMIT ?1) ORDER BY id",
+            )
+            .and_then(|mut q| {
+                q.query_map([CHAT_HISTORY], |r| {
+                    let kind: String = r.get(1)?;
+                    Ok(ChatMessage {
+                        id: r.get(0)?,
+                        kind: if kind == "user" { "user" } else { "event" },
+                        name: r.get(2)?,
+                        text: r.get(3)?,
+                        at: r.get(4)?,
+                    })
+                })?
+                .collect()
+            })
+            .unwrap_or_else(|e| {
+                tracing::error!("loading chat: {e}");
+                Vec::new()
+            });
+        (rx, msgs)
+    }
+
+    /// Ids of tracks whose loudness has not been measured yet.
+    pub fn unmeasured(&self) -> Vec<String> {
+        let db = self.db();
+        db.prepare("SELECT id FROM tracks WHERE gain_db IS NULL")
+            .and_then(|mut q| q.query_map([], |r| r.get(0))?.collect())
+            .unwrap_or_default()
+    }
+
+    pub fn set_gain(&self, id: &str, gain_db: f32) {
+        let r = self.db().execute(
+            "UPDATE tracks SET gain_db = ?1 WHERE id = ?2",
+            params![gain_db, id],
+        );
+        if let Err(e) = r {
+            tracing::error!("saving gain: {e}");
+        }
+        let mut st = self.lock();
+        st.set_gain(id, gain_db);
+        self.broadcast_state(&st);
     }
 
     /// Save queue + current item + live position (tiny, so rewrite everything).
@@ -414,6 +634,27 @@ impl Shared {
     }
 }
 
+/// Seconds until the next local midnight (local = `TZ` env, via SQLite's `localtime`).
+fn secs_to_local_midnight(db: &Connection) -> f64 {
+    db.query_row(
+        "SELECT unixepoch(date('now', 'localtime', '+1 day'), 'utc') - unixepoch('now', 'subsec')",
+        [],
+        |r| r.get(0),
+    )
+    .unwrap_or(3600.0)
+}
+
+/// Today's (server local day) most-reacted DJ; ties go to the most recent reaction.
+fn dj_of_day(db: &Connection) -> Option<String> {
+    db.query_row(
+        "SELECT name FROM reactions WHERE day = date('now', 'localtime')
+             ORDER BY count DESC, last_at DESC LIMIT 1",
+        [],
+        |r| r.get(0),
+    )
+    .ok()
+}
+
 fn load(db: &Connection) -> rusqlite::Result<Station> {
     db.execute_batch(
         "PRAGMA journal_mode=WAL;
@@ -422,10 +663,24 @@ fn load(db: &Connection) -> rusqlite::Result<Station> {
              added_by TEXT NOT NULL, added_at INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS queue(queue_id INTEGER PRIMARY KEY, track_id TEXT NOT NULL,
              added_by TEXT NOT NULL, position INTEGER NOT NULL);
-         CREATE TABLE IF NOT EXISTS station(k TEXT PRIMARY KEY, v TEXT NOT NULL);",
+         CREATE TABLE IF NOT EXISTS station(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS chat(id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
+             name TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
+         CREATE TABLE IF NOT EXISTS history(track_id TEXT NOT NULL, played_at INTEGER NOT NULL);
+         CREATE TABLE IF NOT EXISTS reactions(day TEXT NOT NULL, name TEXT NOT NULL,
+             count INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY(day, name));",
     )?;
+    // Phase 2 migration. NULL = not measured yet (the startup backfill looks for it).
+    let has_gain: bool = db.query_row(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('tracks') WHERE name = 'gain_db'",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_gain {
+        db.execute_batch("ALTER TABLE tracks ADD COLUMN gain_db REAL")?;
+    }
     let library = db
-        .prepare("SELECT id, title, duration_ms, thumbnail, added_by, added_at FROM tracks ORDER BY added_at DESC")?
+        .prepare("SELECT id, title, duration_ms, thumbnail, added_by, added_at, COALESCE(gain_db, 0) FROM tracks ORDER BY added_at DESC")?
         .query_map([], |r| {
             Ok(Track {
                 id: r.get(0)?,
@@ -434,11 +689,13 @@ fn load(db: &Connection) -> rusqlite::Result<Station> {
                 thumbnail: r.get(3)?,
                 added_by: r.get(4)?,
                 added_at: r.get(5)?,
+                gain_db: r.get(6)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
     let mut st = Station {
         library,
+        dj_of_day: dj_of_day(db),
         ..Station::default()
     };
     let item = |st: &Station, queue_id: u64, track_id: &str, added_by: String| {
@@ -455,6 +712,14 @@ fn load(db: &Connection) -> rusqlite::Result<Station> {
     st.queue = rows
         .into_iter()
         .filter_map(|(q, t, a)| item(&st, q, &t, a))
+        .collect();
+    let played: Vec<String> = db
+        .prepare("SELECT track_id FROM history ORDER BY rowid DESC LIMIT ?1")?
+        .query_map([HISTORY_LEN], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    st.history = played
+        .iter()
+        .filter_map(|id| st.track(id).cloned())
         .collect();
     let kv = |k: &str| -> Option<String> {
         db.query_row("SELECT v FROM station WHERE k = ?1", [k], |r| r.get(0))
@@ -499,6 +764,7 @@ mod tests {
             thumbnail: false,
             added_by: "t".into(),
             added_at: 0,
+            gain_db: 0.0,
         }
     }
 
@@ -583,6 +849,110 @@ mod tests {
     }
 
     #[test]
+    fn insert_at_index() {
+        let mut st = station(&["a", "b"]);
+        st.current = Some(st.queue.remove(0)); // not idle
+        st.queue.insert(0, st.current.clone().unwrap());
+        st.insert(track("x", 1000), "u", 1, 0.0);
+        assert_eq!(order(&st), ["a", "x", "b"]);
+        st.insert(track("y", 1000), "u", 99, 0.0);
+        assert_eq!(order(&st), ["a", "x", "b", "y"]);
+        st.insert(track("z", 1000), "u", 0, 0.0);
+        assert_eq!(order(&st), ["z", "a", "x", "b", "y"]);
+        let mut idle = Station::default();
+        idle.insert(track("a", 1000), "u", 5, 0.0);
+        assert!(idle.playing && idle.current.is_some());
+    }
+
+    fn temp_cfg(tag: &str) -> (Config, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("cb-test-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = Config {
+            db_path: dir.join("t.db"),
+            ..Config::from_env()
+        };
+        (cfg, dir)
+    }
+
+    #[test]
+    fn midnight_is_within_a_day() {
+        let s = secs_to_local_midnight(&Connection::open_in_memory().unwrap());
+        assert!(s > 0.0 && s <= 25.0 * 3600.0, "{s}");
+    }
+
+    #[test]
+    fn chat_keeps_last_500_and_serves_last_100() {
+        let (cfg, dir) = temp_cfg("chat");
+        let (shared, _rx) = Shared::new(cfg).unwrap();
+        for i in 0..510 {
+            shared.post_chat("user", "toby", &format!("m{i}"));
+        }
+        let n: i64 = shared
+            .db()
+            .query_row("SELECT COUNT(*) FROM chat", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 500);
+        let (_rx, hist) = shared.subscribe_with_history();
+        assert_eq!(hist.len(), 100);
+        assert_eq!(hist[0].text, "m410"); // oldest first
+        assert_eq!(hist[99].text, "m509");
+        assert_eq!(hist[99].id, 510);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn migrates_mvp_schema() {
+        let (cfg, dir) = temp_cfg("migrate");
+        {
+            let db = Connection::open(&cfg.db_path).unwrap();
+            db.execute_batch(
+                "CREATE TABLE tracks(id TEXT PRIMARY KEY, title TEXT NOT NULL,
+                     duration_ms INTEGER NOT NULL, thumbnail INTEGER NOT NULL,
+                     added_by TEXT NOT NULL, added_at INTEGER NOT NULL);
+                 CREATE TABLE queue(queue_id INTEGER PRIMARY KEY, track_id TEXT NOT NULL,
+                     added_by TEXT NOT NULL, position INTEGER NOT NULL);
+                 CREATE TABLE station(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+                 INSERT INTO tracks VALUES ('a', 'A', 1000, 0, 'toby', 1),
+                                           ('b', 'B', 1000, 0, 'toby', 2);
+                 INSERT INTO queue VALUES (7, 'a', 'toby', 0);",
+            )
+            .unwrap();
+        }
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let (shared, _rx) = Shared::new(cfg.clone()).unwrap();
+            assert_eq!(order(&shared.lock()), ["a"]);
+            assert_eq!(shared.lock().library.len(), 2);
+            assert_eq!(shared.unmeasured(), ["a", "b"]);
+            shared.set_gain("a", 3.5);
+            assert_eq!(shared.lock().queue[0].track.gain_db, 3.5);
+            shared.change(|st, now| {
+                st.play(now); // a becomes current
+                true
+            });
+            shared.change(|st, now| {
+                st.advance(now, true); // a leaves -> history
+                true
+            });
+            assert_eq!(shared.lock().history[0].id, "a");
+            drop(shared);
+            // Reopening an already migrated DB works and keeps gain + history.
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            let st = shared.lock();
+            assert_eq!(st.track("a").unwrap().gain_db, 3.5);
+            assert_eq!(st.history.len(), 1);
+            assert_eq!(st.history[0].gain_db, 3.5);
+            drop(st);
+            assert_eq!(shared.unmeasured(), ["b"]);
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn persistence_roundtrip_resumes_paused() {
         let dir = std::env::temp_dir().join(format!("cb-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -603,7 +973,7 @@ mod tests {
                 shared.lock().library.push(t);
             }
             for id in ["a", "b", "c"] {
-                shared.enqueue(id, "toby").unwrap();
+                shared.enqueue(id, "toby", usize::MAX).unwrap();
             }
             shared.change(|st, now| {
                 st.pause(now);
