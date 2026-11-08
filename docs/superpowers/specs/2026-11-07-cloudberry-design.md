@@ -537,3 +537,51 @@ looks like Animal Crossing." He chose **Hardware / TE-style**: inspired by Teena
 - Motion: keep anime.js + WASM smear but tune to "mechanical": short, snappy, eased like switches and
   meters (counters roll, LEDs blink, keys depress), never bouncy-cute.
 - Keep every feature/behaviour from Phases 2–5 and the playlist work; this is a visual redesign.
+
+---
+
+# Saved shared playlists (added 2026-11-07; Toby: "Can we make a playlist section?" → chose shared playlists)
+
+## Behaviour
+- Anyone can create, rename, delete and edit playlists (no owner lock). Shown in a **Playlists** section
+  next to Library: name, song count, total duration, created_by. Opening one shows its songs as a
+  numbered table (queue style) with drag reorder + remove, and two primary keys: **Queue all** (append in
+  order) and **Shuffle** (append shuffled). If the 200-item queue cap would be exceeded, append as many as
+  fit and return a notice ("Queued 34 of 60, queue is full").
+- Adding songs: a "+ playlist" action on library, history and queue rows (pick existing or create new);
+  "Save queue as playlist" on Up next.
+- YouTube playlist imports auto-save a playlist (`source_list_id` = YouTube list id). Re-importing the same
+  list updates that playlist's tracks (in YouTube order) instead of creating a duplicate; tracks get added as
+  each download finishes; skipped/failed entries are simply absent.
+- Delete shows an Undo toast (client re-creates via `playlist_create` with the same name + track_ids).
+- Chat events: `created playlist <name>`, `renamed playlist <old> to <new>`, `deleted playlist <name>`,
+  `queued playlist <name> (N songs)` / `shuffled playlist <name> (N songs)`. Track adds/removes/moves
+  inside a playlist post no event (too noisy).
+- Limits: ≤ 100 playlists, ≤ 500 tracks each, name 1–60 chars after trim (duplicate names allowed but the
+  client warns). Every playlist message counts against the existing per-connection action limiter.
+
+## Protocol
+Server → client (sent once after `library` on connect, and broadcast after any playlist change):
+```
+{ "type": "playlists", "playlists": Playlist[] }    // newest-updated first
+Playlist { id: u64, name: string, created_by: string, created_at: u64, updated_at: u64,
+           track_ids: string[], source_list_id: string | null }
+```
+Client → server:
+```
+{ "type": "playlist_create", "name": "<name>", "track_ids": ["<id>", ...] }   // track_ids optional
+{ "type": "playlist_rename", "id": <u64>, "name": "<name>" }
+{ "type": "playlist_delete", "id": <u64> }
+{ "type": "playlist_add", "id": <u64>, "track_ids": ["<id>", ...] }          // appends, skips unknown ids
+{ "type": "playlist_remove", "id": <u64>, "index": <usize> }
+{ "type": "playlist_move", "id": <u64>, "from": <usize>, "to": <usize> }
+{ "type": "playlist_queue", "id": <u64>, "shuffle": <bool> }
+```
+Errors as `error` frames: "Unknown playlist", "Playlist name must be 1–60 characters", "Too many playlists",
+"Playlist is full". The same track may appear more than once in a playlist.
+`GET /api/playlists` returns the list (like `/api/library`).
+
+## Persistence
+`playlists(id INTEGER PK, name TEXT, created_by TEXT, created_at INT, updated_at INT, source_list_id TEXT UNIQUE NULL)`,
+`playlist_tracks(playlist_id INT, position INT, track_id TEXT, PRIMARY KEY(playlist_id, position))`;
+migration from the current schema; writes in a transaction.
