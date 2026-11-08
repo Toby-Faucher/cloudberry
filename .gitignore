@@ -5,3 +5,4 @@ node_modules
 /web/.svelte-kit
 /web/static/visualizer.wasm
 .env
+/.claude/worktrees

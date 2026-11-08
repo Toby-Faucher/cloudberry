@@ -159,3 +159,68 @@ Multi-stage `Dockerfile`: build wasm → build web (copy wasm in) → build serv
 
 ## Left to the builder
 Crate versions, file/module structure, exact CSS, reorder interaction details.
+
+---
+
+# Phase 2: polish (added 2026-11-07, approved by Toby: "fun things that make it feel polished, like a chat on the side")
+
+## Protocol additions
+Client → server:
+```
+{ "type": "chat", "text": "<1–500 chars after trim>" }
+{ "type": "react", "emoji": "🔥" | "😂" | "❤️" | "👏" | "🎉" | "😴" }   // anything else rejected
+{ "type": "insert", "track_id": "<id>", "index": <usize> }             // used by Undo to re-add at a spot
+```
+Server → client:
+```
+{ "type": "chat_history", "messages": ChatMessage[] }   // sent once right after welcome, last 100
+{ "type": "chat", "message": ChatMessage }
+{ "type": "react", "listener_id": <u64>, "name": "<name>", "emoji": "<emoji>" }  // not persisted
+```
+```
+ChatMessage { id: u64, kind: "user" | "event", name: string, text: string, at: u64 /*ms epoch*/ }
+```
+Server emits `event` messages (persisted like chat) for: track added ("added <title>"), skipped,
+paused, resumed, removed, joined, left. `name` = who did it, `text` = the action phrase.
+Rate-limit per connection: chat 5/5 s, react 10/5 s; excess silently dropped.
+
+State/Track additions:
+- `Track.gain_db: f32` — after download the server runs an ffmpeg `ebur128` measuring pass
+  (`ffmpeg -nostats -i f.mp3 -filter_complex ebur128=framelog=quiet -f null -`), parses integrated
+  loudness `I`, stores `gain_db = clamp(-14 - I, -12, 12)`. Clients multiply the track's GainNode by it.
+  Existing tracks get measured lazily on startup (one at a time, background).
+- `StationState.history: Track[]` — last 20 played, newest first.
+
+Persistence: `chat(id INT PK, kind, name, text, at)` (keep last 500), `tracks.gain_db REAL DEFAULT 0`,
+`history(track_id, played_at)`.
+
+## Client features
+- Side chat panel (collapsible; a drawer/tab on mobile), events rendered as quiet grey lines,
+  autoscroll unless the user scrolled up ("new messages" pill), `/` focuses chat input.
+- Emoji reaction bar; incoming reactions float up over the now-playing art (randomised x, drift,
+  fade; canvas or DOM with CSS; none under prefers-reduced-motion — show a small static badge).
+- Listener avatars: deterministic colour per name (hash → hue in a warm, accessible range);
+  shown on queue items for `added_by`, in chat, in "who's here".
+- Optional desktop notification when a track you added starts (permission asked only on toggle).
+- Global paste: a YouTube URL pasted anywhere (not into an input) → `add`, with a toast.
+- Shortcuts: Space play/pause, N skip, / chat, ? help dialog (Bits UI dialog). Ignored while typing.
+- Undo toast (~6 s) for remove and skip ("Removed X · Undo" → `insert` at old index; skip undo
+  inserts the skipped track at index 0 and sends `skip`… no: for skip, Undo = `insert` at 0 only).
+- Media Session API: metadata (title, artwork `/art/{id}.jpg`), play/pause/nexttrack handlers,
+  positionState kept updated.
+- Tab title "▶ <title> · Cloudberry" while playing, "Cloudberry" otherwise.
+- Per-track accent: `fast-average-color` on the thumbnail → CSS var `--track-tint` used by the glow
+  and visualizer (blend toward brand orange; keep contrast; fallback orange).
+- Synced lyrics: client fetches LRCLIB (`https://lrclib.net/api/search?q=<cleaned title>`; clean
+  "(Official Video)", "[Lyrics]", "ft." etc.), takes the first result with `syncedLyrics`, parses LRC,
+  highlights the current line on the shared timeline. Cache per track id in memory; silently hidden
+  if nothing found. Toggle button.
+- Recently played list (from `history`), click to enqueue.
+- Libraries: `svelte-dnd-action` (queue reorder; on finalize send `move`, let server state win),
+  `fast-average-color`, `@lucide/svelte` icons, `@fontsource-variable/inter` (self-hosted, replaces
+  Google Fonts). Motion stays on built-in `svelte/motion` / transitions / `animate:flip`.
+
+## Sync hardening (from research)
+- Map AudioContext time to wall time using `ctx.getOutputTimestamp()` (contextTime ↔
+  performanceTime) and subtract `ctx.outputLatency` so Bluetooth output still lines up.
+- Clock offset: median of the 3 lowest-RTT samples of the last 10.
