@@ -7,20 +7,14 @@
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
 	import Avatar from './Avatar.svelte';
-	import { Check, Plus } from '@lucide/svelte';
+	import Icon from '#lib/icons/Icon.svelte';
 
-	// Also used for "Recently played" (history), with a collapsed limit.
-	let {
-		station,
-		tracks,
-		title = 'Library',
-		empty = 'Every track anyone adds lands here, ready to queue again.',
-		limit = Infinity
-	}: { station: Station; tracks?: Track[]; title?: string; empty?: string; limit?: number } = $props();
-	const library = $derived(tracks ?? station.library);
-	const hid = $props.id();
+	/** Everything anyone ever added, newest first: one plain list on a cream sheet. */
+	let { station }: { station: Station } = $props();
+	const LIMIT = 8;
+	const library = $derived(station.library);
 	let expanded = $state(false);
-	const shown = $derived(expanded ? library : library.slice(0, limit));
+	const shown = $derived(expanded ? library : library.slice(0, LIMIT));
 	// Brief "Queued" confirmation per track.
 	let flashed = $state<string | null>(null);
 
@@ -31,78 +25,76 @@
 	}
 </script>
 
-<section aria-labelledby={hid}>
-	<h2 class="section-title" id={hid}>
-		{title} <small class="num">{library.length || ''}</small>
-		{#if library.length > limit}
-			<button class="more" onclick={() => (expanded = !expanded)} aria-expanded={expanded}>
-				{expanded ? 'Show less' : 'Show all'}
-			</button>
-		{/if}
-	</h2>
+<section aria-labelledby="lib-h">
+	<h2 class="section-title" id="lib-h">Library</h2>
 	{#if library.length === 0}
-		<p class="empty">{empty}</p>
+		<p class="empty">Nothing here yet. Every song anyone adds ends up here.</p>
 	{:else}
-		<ul class="grid">
-			{#each shown as t (t.id)}
-				<li animate:flip={{ duration: dur(280), easing: cubicOut }} in:fly={{ y: 8, duration: dur(320), easing: cubicOut }}>
-					<button class="tile" onclick={() => enqueue(t)} aria-label="Add {t.title} to the queue">
-						<Art track={t} size={44} />
-						<span class="what">
+		<div class="sheet">
+			<ul>
+				{#each shown as t (t.id)}
+					<li animate:flip={{ duration: dur(280), easing: cubicOut }} in:fly={{ y: 8, duration: dur(320), easing: cubicOut }}>
+						<button class="row" onclick={() => enqueue(t)} aria-label="Add {t.title} to the queue">
+							<Art track={t} size={40} />
 							<span class="name" title={t.title}>{t.title}</span>
-							<span class="sub"><Avatar name={t.added_by} size={14} /> {t.added_by} · <span class="num">{fmtTime(t.duration_ms)}</span></span>
-						</span>
-						<span class="add" class:done={flashed === t.id} aria-hidden="true">
-							{#if flashed === t.id}<Check size={16} />{:else}<Plus size={16} />{/if}
-						</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
+							<span class="by"><Avatar name={t.added_by} size={20} /><span>{t.added_by}</span></span>
+							<span class="dur num">{fmtTime(t.duration_ms)}</span>
+							<span class="add" class:done={flashed === t.id} aria-hidden="true">
+								<Icon name={flashed === t.id ? 'check' : 'plus'} size={16} />
+							</span>
+						</button>
+					</li>
+				{/each}
+			</ul>
+			{#if library.length > LIMIT}
+				<button class="more" onclick={() => (expanded = !expanded)} aria-expanded={expanded}>
+					{expanded ? 'Fewer' : `All ${library.length} songs`}
+				</button>
+			{/if}
+		</div>
 	{/if}
 </section>
 
 <style>
 	.empty {
 		margin: 0;
-		color: var(--ink-3);
-		font-size: 0.9rem;
+		color: var(--on-bg-2);
+		font-size: 0.95rem;
 	}
-	.grid {
+	.sheet {
+		background: var(--surface);
+		color: var(--ink);
+		border-radius: 20px;
+		padding: 6px;
+		box-shadow: var(--sticker);
+	}
+	ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-		gap: 6px;
 	}
-	.tile {
+	li + li {
+		border-top: 2px solid var(--surface-2);
+	}
+	.row {
 		width: 100%;
-		display: flex;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) minmax(0, 9rem) 3rem auto;
 		align-items: center;
-		gap: 12px;
-		padding: 8px;
-		border-radius: var(--r-md);
+		gap: 14px;
+		padding: 8px 8px;
+		border-radius: 12px;
 		text-align: left;
-		transition:
-			background-color 160ms var(--ease-out),
-			transform 120ms var(--ease-out);
+		transition: background-color 160ms var(--ease-out);
 	}
 	@media (hover: hover) {
-		.tile:hover {
-			background: var(--surface);
+		.row:hover {
+			background: var(--surface-2);
 		}
-		.tile:hover .add {
-			opacity: 1;
+		.row:hover .add {
+			background: var(--accent);
+			color: var(--on-accent);
 		}
-	}
-	.tile:focus-visible .add {
-		opacity: 1;
-	}
-	.what {
-		flex: 1;
-		min-width: 0;
-		display: grid;
 	}
 	.name {
 		white-space: nowrap;
@@ -111,52 +103,64 @@
 		font-weight: 600;
 		font-size: 0.95rem;
 	}
-	.sub {
+	.by {
 		display: flex;
 		align-items: center;
-		gap: 5px;
-		color: var(--ink-3);
-		font-size: 0.78rem;
-		white-space: nowrap;
-		overflow: hidden;
-	}
-	.more {
-		margin-left: auto;
-		font-family: var(--font-body);
-		font-size: 0.8rem;
-		font-weight: 500;
+		gap: 7px;
+		min-width: 0;
 		color: var(--ink-2);
-		padding: 2px 8px;
-		border-radius: 99px;
+		font-size: 0.85rem;
+		white-space: nowrap;
 	}
-	@media (hover: hover) {
-		.more:hover {
-			color: var(--ink);
-			background: var(--surface-2);
-		}
+	.by span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.dur {
+		text-align: right;
+		font-family: var(--font-display);
+		font-weight: 600;
+		color: var(--ink-2);
 	}
 	.add {
 		display: grid;
 		place-items: center;
 		width: 34px;
 		height: 34px;
-		flex: none;
-		border-radius: 50%;
+		border-radius: 10px;
 		color: var(--accent-ink);
 		background: var(--accent-soft);
-		opacity: 0;
 		transition:
-			opacity 160ms var(--ease-out),
-			background-color 200ms;
+			background-color 160ms var(--ease-out),
+			color 160ms var(--ease-out);
 	}
 	.add.done {
-		opacity: 1;
 		background: var(--accent);
 		color: var(--on-accent);
 	}
-	@media (hover: none) {
-		.add {
-			opacity: 1;
+	.more {
+		display: block;
+		width: 100%;
+		margin-top: 4px;
+		padding: 10px;
+		border-radius: 12px;
+		border-top: 2px solid var(--surface-2);
+		font-family: var(--font-display);
+		font-weight: 650;
+		color: var(--accent-ink);
+	}
+	@media (hover: hover) {
+		.more:hover {
+			background: var(--surface-2);
+		}
+	}
+	@media (max-width: 560px) {
+		.row {
+			grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+			gap: 10px;
+		}
+		.by span {
+			display: none; /* the avatar says who */
 		}
 	}
 </style>

@@ -2,6 +2,7 @@
 	import { REACTION_MS, type Station } from '#lib/station.svelte.ts';
 	import { reducedMotion } from '#lib/util.ts';
 	import { smearAnimate } from '#lib/motion/motion.ts';
+	import Sticker from '#lib/icons/Sticker.svelte';
 
 	/** Overlay for the now-playing art: incoming reactions drift up and fade. */
 	let { station }: { station: Station } = $props();
@@ -24,13 +25,13 @@
 <div class="layer" aria-hidden="true" style:--ms="{REACTION_MS}ms">
 	{#if reducedMotion}
 		{#if latest}
-			<span class="badge">{latest.emoji} <span>{latest.mine ? 'You' : latest.name}</span></span>
+			<span class="badge"><Sticker emoji={latest.emoji} size={26} /> <span>{latest.mine ? 'You' : latest.name}</span></span>
 		{/if}
 	{:else}
 		{#each station.reactions as r (r.key)}
 			<span class="float" style:--x={r.x}>
 				<span class="fly" use:rise={r.drift}>
-					<span class="emoji">{r.emoji}</span>
+					<Sticker emoji={r.emoji} size={52} />
 					<span class="who">{r.mine ? 'You' : r.name}</span>
 				</span>
 			</span>
@@ -43,7 +44,7 @@
 		position: absolute;
 		inset: 0;
 		pointer-events: none;
-		z-index: 2;
+		z-index: 5; /* above the art (3) in the now-playing stacking context */
 	}
 	.float {
 		position: absolute;
@@ -58,18 +59,16 @@
 		opacity: 0;
 		will-change: translate, scale, opacity;
 	}
-	.emoji {
-		font-size: 2.2rem;
-		line-height: 1;
-		filter: drop-shadow(0 4px 10px rgb(0 0 0 / 0.25));
-	}
+	/* Name tag under the sticker: a tiny ink label with the same white cut. */
 	.who {
-		font-size: 0.7rem;
+		font-family: var(--font-display);
+		font-size: 0.74rem;
 		font-weight: 650;
-		padding: 2px 8px;
-		border-radius: 99px;
-		background: rgb(20 14 10 / 0.7);
-		color: #fff;
+		padding: 1px 8px;
+		border-radius: var(--r-sm);
+		background: var(--ink);
+		color: var(--surface);
+		box-shadow: 0 0 0 2px var(--die);
 		white-space: nowrap;
 	}
 	.badge {
@@ -79,10 +78,11 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		padding: 4px 10px 4px 8px;
-		border-radius: 99px;
-		background: rgb(20 14 10 / 0.6);
-		color: #fff;
+		padding: 3px 10px 3px 6px;
+		border-radius: var(--r-sm);
+		background: var(--ink);
+		color: var(--surface);
+		box-shadow: 0 0 0 2px var(--die);
 		font-size: 0.8rem;
 		font-weight: 600;
 	}

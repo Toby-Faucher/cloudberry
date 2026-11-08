@@ -81,8 +81,8 @@
 				<label for="name">What should the room call you?</label>
 				<div class="field">
 					<!-- svelte-ignore a11y_autofocus -->
-					<input id="name" bind:value={draft} maxlength="32" autocomplete="nickname" placeholder="Your name" autofocus />
-					<button type="submit" disabled={!validName(draft)}>Continue</button>
+					<input id="name" bind:value={draft} maxlength="32" autocomplete="nickname" placeholder="Name or nickname" autofocus />
+					<button type="submit" disabled={!validName(draft)}>That's me</button>
 				</div>
 			</form>
 		{:else}
@@ -92,7 +92,8 @@
 					Tune in
 				</button>
 				<p class="as">
-					Listening as <strong>{name}</strong> · <button class="link" onclick={changeName}>change</button>
+					<span>Hey <strong>{name}</strong>.</span>
+					<button class="link" onclick={changeName}>Not you?</button>
 				</p>
 			</div>
 		{/if}
@@ -147,27 +148,36 @@
 		gap: 18px;
 		padding: 24px;
 		text-align: center;
+		color: var(--on-bg);
 	}
+	/* The wordmark as a sticker: berry letters inside a fat white die-cut, like the logo. */
 	.wordmark {
 		font-family: var(--font-display);
 		font-weight: 700;
 		font-size: clamp(3rem, 2.2rem + 3.6vw, 4.8rem);
 		letter-spacing: -0.02em;
 		line-height: 1;
+		color: var(--berry-500);
+		-webkit-text-stroke: 0.18em var(--die);
+		paint-order: stroke fill;
+		text-shadow: 0 0.12em 0 var(--shade);
 	}
 	.wordmark.small {
-		font-size: 1.6rem;
+		font-size: 1.7rem;
 		letter-spacing: -0.015em;
 	}
 
 	.name-form {
 		display: grid;
-		gap: 12px;
+		gap: 14px;
 		margin-top: 18px;
-		width: min(100%, 360px);
+		width: min(100%, 380px);
 	}
 	.name-form label {
-		color: var(--ink-2);
+		font-family: var(--font-display);
+		font-size: 1.2rem;
+		font-weight: 600;
+		color: var(--on-bg);
 	}
 	.field {
 		display: flex;
@@ -175,11 +185,8 @@
 		padding: 6px;
 		border-radius: 18px;
 		background: var(--surface);
-		border: 1px solid var(--line);
-		box-shadow: var(--shadow);
-	}
-	.field:focus-within {
-		border-color: color-mix(in oklab, var(--accent) 55%, var(--line));
+		color: var(--ink);
+		box-shadow: var(--sticker);
 	}
 	.field input {
 		flex: 1;
@@ -189,13 +196,19 @@
 		padding: 10px 12px;
 		outline: none;
 	}
+	.field input::placeholder {
+		color: var(--ink-3);
+	}
 	.field button {
 		padding: 0 18px;
-		min-height: 44px;
+		min-height: 46px;
 		border-radius: 12px;
 		background: var(--accent);
 		color: var(--on-accent);
+		font-family: var(--font-display);
+		font-size: 1.05rem;
 		font-weight: 650;
+		box-shadow: var(--lip);
 		transition:
 			opacity 160ms,
 			background-color 160ms var(--ease-out);
@@ -204,86 +217,108 @@
 		background: var(--accent-hover);
 	}
 	.field button:disabled {
-		opacity: 0.4;
+		opacity: 0.45;
 		cursor: not-allowed;
 	}
 
 	.tune {
 		display: grid;
 		justify-items: center;
-		gap: 22px;
+		gap: 26px;
 		margin-top: 28px;
 	}
 	.tune-btn {
 		position: relative;
-		width: 168px;
-		height: 168px;
+		width: 172px;
+		height: 172px;
 		border-radius: 50%;
 		background: var(--accent);
 		color: var(--on-accent);
 		font-family: var(--font-display);
-		font-size: 1.5rem;
+		font-size: 1.6rem;
 		font-weight: 700;
 		letter-spacing: -0.02em;
-		box-shadow: var(--lip), var(--die-cut), var(--shadow-pop);
-		transition: background-color 160ms var(--ease-out);
+		rotate: -4deg;
+		box-shadow:
+			var(--lip),
+			0 0 0 6px var(--die),
+			0 10px 0 6px var(--shade);
+		transition:
+			background-color 160ms var(--ease-out),
+			translate 120ms var(--ease-out),
+			box-shadow 120ms var(--ease-out);
 	}
 	.tune-btn:hover {
 		background: var(--accent-hover);
 	}
+	.tune-btn:active {
+		translate: 0 7px;
+		box-shadow:
+			var(--lip),
+			0 0 0 6px var(--die),
+			0 3px 0 6px var(--shade);
+	}
+	/* The one idle motion we keep: the gate asking to be pressed. */
 	.ring {
 		position: absolute;
-		inset: 0;
+		inset: -6px;
 		border-radius: 50%;
-		border: 2px solid var(--accent);
+		border: 4px solid var(--die);
 		animation: ripple 2.6s var(--ease-out) infinite;
 		pointer-events: none;
 	}
 	@keyframes ripple {
 		from {
 			transform: scale(1);
-			opacity: 0.6;
+			opacity: 0.7;
 		}
 		to {
-			transform: scale(1.55);
+			transform: scale(1.45);
 			opacity: 0;
 		}
 	}
 	.as {
 		margin: 0;
-		color: var(--ink-2);
-		font-size: 0.9rem;
+		display: flex;
+		align-items: baseline;
+		gap: 12px;
+		color: var(--on-bg);
+		font-size: 1rem;
 	}
 	.link {
-		color: var(--ink-2);
+		color: var(--on-bg-2);
 		text-decoration: underline;
-		text-decoration-color: var(--line);
-		text-underline-offset: 3px;
+		text-decoration-thickness: 2px;
+		text-decoration-color: color-mix(in oklab, var(--on-bg-2) 50%, transparent);
+		text-underline-offset: 4px;
 	}
 	.link:hover {
-		color: var(--ink);
+		color: var(--on-bg);
 	}
 
 	/* ---------- app ---------- */
 	.shell {
 		position: relative;
+		overflow-x: clip; /* the now-playing aura may bleed sideways; never a horizontal scroll */
 	}
 	.shell.docked {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 340px;
+		grid-template-columns: minmax(0, 1fr) 360px;
 		align-items: start;
 	}
 	.app {
-		max-width: 1180px;
-		min-width: 0; /* never let the header chips widen the column */
+		max-width: 1220px;
+		min-width: 0; /* never let the header widen the column */
 		margin: 0 auto;
-		padding: 20px 32px 64px;
+		padding: 20px 36px 72px;
 	}
 	header {
+		position: relative;
+		z-index: 4; /* above the now-playing column and its aura, which may bleed up */
 		display: flex;
 		align-items: center;
-		gap: 16px;
-		padding: 4px 0 28px;
+		gap: 18px;
+		padding: 4px 0 30px;
 	}
 	.brand {
 		display: flex;
@@ -294,8 +329,9 @@
 		flex: 1;
 		min-width: 0;
 		display: flex;
-		overflow: hidden; /* chips truncate; they never push the layout wider */
-		padding: 4px 0; /* room for the countdown pulse */
+		overflow: hidden; /* the countdown truncates; it never pushes the layout wider */
+		padding: 8px 6px 12px; /* room for die-cuts, drops and the countdown pulse */
+		margin: -8px 0 -12px;
 	}
 	.head-right {
 		display: flex;
@@ -307,18 +343,19 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		height: 36px;
+		height: 40px;
 		padding: 0 12px;
-		border-radius: 999px;
-		color: var(--ink-2);
+		border-radius: 12px;
+		color: var(--on-bg);
+		font-family: var(--font-display);
+		font-size: 1rem;
 		font-weight: 600;
 		transition:
 			background-color 160ms var(--ease-out),
 			color 160ms var(--ease-out);
 	}
 	.me-btn:hover {
-		background: var(--surface-2);
-		color: var(--ink);
+		background: color-mix(in oklab, var(--shade) 55%, transparent);
 	}
 	.me-name {
 		max-width: 12ch;
@@ -336,10 +373,11 @@
 		pointer-events: none;
 	}
 
+	/* Not three equal panels: one big sticker on the left, loose sections on the bog to its right. */
 	.grid {
 		display: grid;
-		grid-template-columns: minmax(340px, 420px) 1fr;
-		gap: 40px;
+		grid-template-columns: minmax(360px, 440px) 1fr;
+		gap: 48px;
 		align-items: start;
 	}
 	.left {
@@ -347,15 +385,18 @@
 		top: 20px;
 	}
 	.right {
+		position: relative;
+		z-index: 1; /* above the aura's sideways bleed */
 		display: grid;
-		gap: 36px;
+		gap: 40px;
 		min-width: 0;
+		padding-top: 6px;
 	}
 
 	@media (max-width: 880px) {
 		.grid {
 			grid-template-columns: 1fr;
-			gap: 32px;
+			gap: 36px;
 		}
 		.left {
 			position: static;
@@ -363,8 +404,6 @@
 			width: 100%;
 			margin: 0 auto;
 		}
-	}
-	@media (max-width: 880px) {
 		header {
 			flex-wrap: wrap;
 		}
@@ -377,32 +416,36 @@
 		}
 	}
 	@media (max-width: 560px) {
+		/* The fixed transport bar lives inside .now's stacking context: lift the whole column. */
+		.left {
+			position: relative;
+			z-index: 3;
+		}
+	}
+	@media (max-width: 560px) {
 		.app {
-			padding: 14px 16px calc(112px + env(safe-area-inset-bottom)); /* room for the transport bar */
+			padding: 14px 16px calc(116px + env(safe-area-inset-bottom)); /* room for the transport bar */
 		}
 		header {
 			gap: 12px;
-			padding-bottom: 16px;
+			padding-bottom: 14px;
 		}
 		.head-right {
-			gap: 6px;
+			gap: 8px;
 		}
 		.me-name {
 			display: none; /* icon-only here; the label still names it */
 		}
 		.me-btn {
-			width: 36px;
+			width: 40px;
 			justify-content: center;
 			padding: 0;
 		}
 		.wordmark.small {
-			font-size: 1.4rem;
-		}
-		header :global(.chat-btn) {
-			width: 36px;
+			font-size: 1.45rem;
 		}
 		.grid {
-			gap: 24px;
+			gap: 28px;
 		}
 	}
 </style>

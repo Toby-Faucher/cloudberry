@@ -3,7 +3,9 @@
 	import { fly, fade } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { CircleAlert, Check, ListMusic, ListPlus, Plus, X } from '@lucide/svelte';
+	import { CircleAlert, ListMusic, ListPlus } from '@lucide/svelte';
+	import Icon from '#lib/icons/Icon.svelte';
+	import Avatar from './Avatar.svelte';
 	import { dur, isYouTubeUrl } from '#lib/util.ts';
 	import { groupJobs, jobVideo, playlistUrl } from '#lib/playlist.ts';
 	import type { Job } from '#lib/types.ts';
@@ -33,7 +35,7 @@
 	}
 
 	const label = (status: string) =>
-		({ queued: 'Waiting', downloading: 'Downloading', done: 'Added', failed: 'Failed' })[status] ?? status;
+		({ queued: 'Waiting its turn', downloading: 'Grabbing it', done: 'In the library', failed: 'No luck' })[status] ?? status;
 </script>
 
 <section aria-label="Add a track">
@@ -44,7 +46,7 @@
 			type="url"
 			inputmode="url"
 			autocomplete="off"
-			placeholder="Paste a YouTube link"
+			placeholder="Drop a YouTube link"
 			bind:value={url}
 			oninput={() => {
 				invalid = false;
@@ -52,11 +54,11 @@
 			}}
 		/>
 		<button type="submit" disabled={!url.trim()}>
-			<Plus size={16} /> Add
+			<Icon name="plus" size={18} /> Add
 		</button>
 	</form>
 	{#if invalid}
-		<p class="hint" transition:fade={{ duration: dur(150) }}>That isn't a YouTube link. Try one from youtube.com or youtu.be.</p>
+		<p class="hint" transition:fade={{ duration: dur(150) }}>That's not a YouTube link. Grab one from youtube.com or youtu.be.</p>
 	{:else if station.addNote}
 		<p class="hint" class:note={!station.addNote.error} role={station.addNote.error ? 'alert' : 'status'} transition:fade={{ duration: dur(150) }}>
 			{#if station.addNote.error}<CircleAlert size={14} />{:else}<span class="spinner"></span>{/if}
@@ -75,15 +77,16 @@
 				>
 				{#if row.kind === 'playlist'}
 					{@const busy = row.queued > 0 || !!row.current}
-					<span class="state">{#if busy}<ListMusic size={14} />{:else}<Check size={14} strokeWidth={2.5} />{/if}</span>
+					<span class="state">{#if busy}<ListMusic size={14} />{:else}<Icon name="check" size={14} />{/if}</span>
 					<span class="what">
-						<span class="name">{row.title} · <span class="num">{row.done}/{row.total}</span></span>
+						<span class="name">{row.title}</span>
 						<span class="sub">
-							{#if row.current}Downloading {row.current.title ?? 'next song'}{:else if busy}Waiting{:else}Done{/if}
-							{#if row.failed}· {row.failed} failed{/if}
-							· {row.added_by}
+							<span>{#if row.current}Grabbing {row.current.title ?? 'the next one'}{:else if busy}Waiting its turn{:else}All in{/if}</span>
+							{#if row.failed}<span class="err">{row.failed} failed</span>{/if}
 						</span>
 					</span>
+					<span class="pct num">{row.done}/{row.total}</span>
+					<Avatar name={row.added_by} size={22} />
 					{#if row.queued}
 						<button
 							class="icon-btn cancel"
@@ -91,7 +94,7 @@
 							title="Cancel the rest ({row.queued} not started)"
 							onclick={() => station.send({ type: 'cancel_playlist', playlist_id: row.id })}
 						>
-							<X size={16} />
+							<Icon name="close" size={16} />
 						</button>
 					{/if}
 					{#if busy}
@@ -101,18 +104,19 @@
 					{@const job = row.job}
 					{@const list = hintFor(job)}
 					<span class="state">
-						{#if job.status === 'done'}<Check size={14} strokeWidth={2.5} />{:else if job.status === 'failed'}<CircleAlert
+						{#if job.status === 'done'}<Icon name="check" size={14} />{:else if job.status === 'failed'}<CircleAlert
 								size={14}
 							/>{:else}<span class="spinner"></span>{/if}
 					</span>
 					<span class="what">
 						<span class="name">{job.title ?? job.url}</span>
 						<span class="sub">
-							{label(job.status)}{#if job.status === 'downloading'}&nbsp;· <span class="num">{Math.round(job.progress * 100)}%</span>{/if}
-							{#if job.error}· {job.error}{/if}
-							· {job.added_by}
+							<span>{label(job.status)}</span>
+							{#if job.error}<span class="err">{job.error}</span>{/if}
 						</span>
 					</span>
+					{#if job.status === 'downloading'}<span class="pct num">{Math.round(job.progress * 100)}%</span>{/if}
+					<Avatar name={job.added_by} size={22} />
 					{#if list}
 						<button class="whole" onclick={() => addWhole(job, list)}>
 							<ListPlus size={15} /> Add the whole playlist?
@@ -129,21 +133,28 @@
 </section>
 
 <style>
-	/* A flat slot with a thick edge that lights up berry when you're in it. */
+	/* A cream slot stuck on the bog; its inner edge lights up berry when you're in it. */
 	.add {
 		display: flex;
 		gap: 6px;
 		padding: 6px;
 		border-radius: 18px;
 		background: var(--surface);
-		border: 3px solid var(--line);
-		transition: border-color 160ms var(--ease-out);
+		color: var(--ink);
+		box-shadow:
+			inset 0 0 0 3px transparent,
+			var(--sticker);
+		transition: box-shadow 160ms var(--ease-out);
 	}
 	.add:focus-within {
-		border-color: var(--accent-line);
+		box-shadow:
+			inset 0 0 0 3px var(--accent-line),
+			var(--sticker);
 	}
 	.add.invalid {
-		border-color: var(--danger);
+		box-shadow:
+			inset 0 0 0 3px var(--danger),
+			var(--sticker);
 	}
 	input {
 		flex: 1;
@@ -182,12 +193,19 @@
 		cursor: not-allowed;
 		box-shadow: none;
 	}
+	/* Sits on the bog, so it gets its own cream tag to stay readable. */
 	.hint {
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		margin: 8px 6px 0;
+		width: fit-content;
+		margin: 16px 0 0;
+		padding: 6px 12px;
+		border-radius: 10px;
+		background: var(--surface);
+		box-shadow: 0 4px 0 var(--shade);
 		font-size: 0.85rem;
+		font-weight: 550;
 		color: var(--danger);
 	}
 	.hint.note {
@@ -219,10 +237,10 @@
 
 	.jobs {
 		list-style: none;
-		margin: 10px 0 0;
+		margin: 18px 0 0;
 		padding: 0;
 		display: grid;
-		gap: 6px;
+		gap: 10px;
 	}
 	.job {
 		position: relative;
@@ -231,9 +249,17 @@
 		gap: 12px;
 		padding: 10px 14px;
 		border-radius: var(--r-md);
-		background: var(--surface-2);
+		background: var(--surface);
+		color: var(--ink);
+		box-shadow: 0 4px 0 var(--shade);
 		overflow: hidden;
 		font-size: 0.88rem;
+	}
+	.pct {
+		flex: none;
+		font-family: var(--font-display);
+		font-weight: 650;
+		color: var(--ink-2);
 	}
 	.state {
 		display: grid;
@@ -263,6 +289,7 @@
 		}
 	}
 	.what {
+		flex: 1;
 		min-width: 0;
 		display: grid;
 	}
@@ -270,12 +297,16 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		font-weight: 500;
+		font-weight: 600;
 	}
 	.sub {
+		display: flex;
+		gap: 10px;
+		min-width: 0;
 		color: var(--ink-2);
 		font-size: 0.8rem;
 	}
+	.err,
 	.failed .sub {
 		color: var(--danger);
 	}
@@ -284,7 +315,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		height: 2px;
+		height: 4px;
 	}
 	.bar span {
 		display: block;

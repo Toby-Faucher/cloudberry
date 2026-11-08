@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SkipForward } from '@lucide/svelte';
+	import Icon from '#lib/icons/Icon.svelte';
 	import type { Station } from '#lib/station.svelte.ts';
 	import { pressSkip, releaseSkip, skipHold } from '#lib/hold.svelte.ts';
 	import { wiggle } from '#lib/motion/motion.ts';
@@ -63,7 +63,7 @@
 			<circle class="track" cx="28" cy="28" r={R} />
 			<circle class="fill" cx="28" cy="28" r={R} stroke-dasharray={C} stroke-dashoffset={C * (1 - skipHold.p)} />
 		</svg>
-		<SkipForward size={20} fill="currentColor" />
+		<Icon name="skip" size={22} />
 	</button>
 	<span id="skip-hint" class="hint" class:show={hinting}>Hold to skip</span>
 </div>
@@ -83,6 +83,7 @@
 		place-items: center;
 		color: var(--ink);
 		background: var(--surface-2);
+		box-shadow: 0 4px 0 var(--shade-2);
 		touch-action: none;
 		user-select: none;
 		-webkit-user-select: none;
@@ -135,7 +136,7 @@
 		padding: 5px 10px;
 		border-radius: 8px;
 		background: var(--ink);
-		color: var(--bg);
+		color: var(--surface);
 		font-size: 0.78rem;
 		font-weight: 600;
 		white-space: nowrap;

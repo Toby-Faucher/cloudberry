@@ -18,7 +18,6 @@
 	);
 	const shown = $derived(sorted.slice(0, max));
 	const extra = $derived(sorted.slice(max));
-	const here = $derived(listeners.filter((l) => !l.away).length);
 	let root = $state<HTMLElement>();
 
 	const el = (id: number) => root?.querySelector<HTMLElement>(`[data-lid="${id}"]`);
@@ -31,9 +30,9 @@
 	});
 
 	const label = (l: { id: number; name: string; away: boolean }) =>
-		[l.name, l.id === station.you && '(you)', l.away && '· away', ui.dj === l.name && '· DJ of the day']
+		[l.name + (l.id === station.you ? ' (you)' : ''), l.away && 'away', ui.dj === l.name && 'DJ of the day']
 			.filter(Boolean)
-			.join(' ');
+			.join(', ');
 </script>
 
 <div class="room" bind:this={root}>
@@ -55,7 +54,7 @@
 					</Tooltip.Trigger>
 					<Tooltip.Portal>
 						<Tooltip.Content sideOffset={8} class="cb-tip">
-							{label(l)}{l.id === station.you ? '' : ' · click to poke'}
+							{label(l)}{l.id === station.you ? '' : '. Click to poke'}
 						</Tooltip.Content>
 					</Tooltip.Portal>
 				</Tooltip.Root>
@@ -74,7 +73,6 @@
 			</li>
 		{/if}
 	</ul>
-	<span class="count chip"><b>{here}</b> here</span>
 </div>
 
 <style>
@@ -98,7 +96,7 @@
 		display: grid;
 		place-items: center;
 		border-radius: 50%;
-		border: 2px solid var(--bg);
+		border: 3px solid var(--die);
 		cursor: default;
 		transition:
 			opacity 300ms var(--ease-out),
@@ -126,19 +124,13 @@
 		font-size: 0.78rem;
 		font-weight: 700;
 	}
-	@media (max-width: 1380px) {
-		.count {
-			display: none; /* the stack already says it; make room for the HUD */
-		}
-	}
 	:global(.cb-tip) {
 		background: var(--ink);
-		color: var(--bg);
+		color: var(--surface);
 		font-size: 0.8rem;
 		font-weight: 550;
 		padding: 6px 10px;
 		border-radius: 8px;
-		box-shadow: var(--shadow);
 		z-index: 50;
 		transform-origin: var(--bits-tooltip-content-transform-origin);
 		animation: tip-in 140ms var(--ease-out);

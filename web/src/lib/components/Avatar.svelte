@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Crown } from '@lucide/svelte';
+	import Icon from '#lib/icons/Icon.svelte';
 	import { hue, initials } from '#lib/util.ts';
 	import { ui } from '#lib/ui.svelte.ts';
 
@@ -10,7 +10,7 @@
 </script>
 
 <span class="avatar" class:me class:small={size < 24} style:--h={hue(name)} style:--s="{size}px" aria-hidden="true"
-	>{initials(name)}{#if dj}<span class="crown"><Crown size={size < 24 ? 10 : Math.round(size * 0.5)} fill="currentColor" strokeWidth={2.2} /></span>{/if}</span
+	>{initials(name)}{#if dj}<span class="crown"><Icon name="crown" size={size < 24 ? 11 : Math.round(size * 0.52)} /></span>{/if}</span
 >
 
 <style>
@@ -42,7 +42,7 @@
 		rotate: -12deg;
 		display: grid;
 		color: var(--berry-500);
-		filter: drop-shadow(0 1px 0 var(--berry-700)) drop-shadow(0 1px 2px rgb(0 0 0 / 0.3));
+		filter: drop-shadow(0 2px 0 var(--berry-700));
 		pointer-events: none;
 	}
 	/* Tiny avatars sit in text lines: the crown perches on the shoulder instead of on top. */

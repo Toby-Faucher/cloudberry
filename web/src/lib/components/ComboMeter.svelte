@@ -3,8 +3,9 @@
 	import type { Station } from '#lib/station.svelte.ts';
 	import { comboHeat } from '#lib/game.ts';
 	import { motion, reduced, smearAnimate } from '#lib/motion/motion.ts';
+	import Sticker from '#lib/icons/Sticker.svelte';
 
-	/** "🔥 ×5 COMBO" over the art: pops and shakes on every hit, heats berry → blush. */
+	/** "[flame] ×5 combo!" over the art: pops and shakes on every hit, heats berry → blush. */
 	let { station }: { station: Station } = $props();
 
 	const combo = $derived(station.combo);
@@ -43,16 +44,16 @@
 
 {#if shown}
 	<div class="combo" bind:this={el} style:--heat={comboHeat(shown.count)} aria-live="polite">
-		<span class="e" aria-hidden="true">{shown.emoji}</span>
+		<span class="e"><Sticker emoji={shown.emoji} size={34} /></span>
 		<span class="n num">×{shown.count}</span>
-		<span class="w">combo</span>
+		<span class="w">combo!</span>
 	</div>
 {/if}
 
 <style>
 	.combo {
 		position: absolute;
-		z-index: 3;
+		z-index: 6;
 		top: 6%;
 		left: 50%;
 		margin-left: -80px;
@@ -67,22 +68,21 @@
 		/* Dark ink on berry → blush: 7.2:1 → 4.5:1, and it's large bold text. */
 		background: color-mix(in oklab, var(--blush-500) calc(var(--heat) * 100%), var(--berry-500));
 		color: #211a16;
-		box-shadow: var(--lip), var(--die-cut), var(--shadow);
+		box-shadow: var(--lip), var(--sticker);
 		font-family: var(--font-display);
 		font-weight: 700;
 		white-space: nowrap;
 	}
 	.e {
-		font-size: 1.4rem;
 		align-self: center;
+		margin: -10px 0 -10px -8px;
+		rotate: -10deg;
 	}
 	.n {
 		font-size: calc(1.4rem + var(--heat) * 0.5rem);
 		letter-spacing: -0.02em;
 	}
 	.w {
-		font-size: 0.8rem;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
+		font-size: 0.95rem;
 	}
 </style>

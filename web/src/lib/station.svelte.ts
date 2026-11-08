@@ -6,6 +6,7 @@ import { Clock, Player, expectedPositionMs, localNow } from './sync';
 import { ui } from './ui.svelte';
 import { Combo, COMBO_WINDOW_MS } from './game';
 import { addError, linkParts } from './playlist';
+import { matchPending, PENDING_MS, type PendingChat } from './chat';
 import type { ChatMessage, ClientMsg, Emoji, Job, QueueItem, ServerMsg, StationState, Track } from './types';
 
 export type ConnStatus = 'connecting' | 'live' | 'reconnecting';
@@ -41,6 +42,7 @@ export const REACTION_MS = 2600;
 const MAX_FLOATING = 24;
 let toastSeq = 0;
 let reactionSeq = 0;
+let pendingSeq = 0;
 
 const PING_BURST = 8;
 const PING_BURST_GAP_MS = 120;
@@ -66,6 +68,10 @@ export class Station {
 	toast = $state<Toast | null>(null);
 	/** Newest last; capped. */
 	chat = $state<ChatMessage[]>([]);
+	/** Our sent messages the server hasn't echoed yet (oldest first). */
+	pendingChat = $state<PendingChat[]>([]);
+	/** Echoed message id -> the pending key it settled: the chat keeps the same bubble (no re-entrance). */
+	readonly settled = new Map<number, number>();
 	/** Reactions currently floating over the art; each removes itself after REACTION_MS. */
 	reactions = $state<Reaction[]>([]);
 	/** Live reaction combo (3+ of the same emoji within 2 s), null when none. */
@@ -203,7 +209,22 @@ export class Station {
 		const t = text.trim();
 		if (!t || t.length > CHAT_MAX) return false;
 		this.send({ type: 'chat', text: t });
+		// Shown at once as pending; the server's echo settles it (matched by name + text).
+		const key = ++pendingSeq;
+		this.pendingChat = [...this.pendingChat, { key, text: t, failed: false }];
+		setTimeout(() => {
+			const p = this.pendingChat.find((x) => x.key === key);
+			if (p) p.failed = true;
+		}, PENDING_MS);
 		return true;
+	}
+
+	/** A pending message never came back: drop it and send it again. */
+	retryChat(key: number) {
+		const p = this.pendingChat.find((x) => x.key === key);
+		if (!p) return;
+		this.pendingChat = this.pendingChat.filter((x) => x.key !== key);
+		this.sendChat(p.text);
 	}
 
 	react(emoji: Emoji) {
@@ -311,13 +332,19 @@ export class Station {
 				if (!this.chat.length) ui.seenId = Math.max(ui.seenId, msg.messages.at(-1)?.id ?? 0);
 				this.chat = msg.messages.slice(-CHAT_KEEP);
 				break;
-			case 'chat':
+			case 'chat': {
 				if (this.chat.some((m) => m.id === msg.message.id)) break;
+				const mine = matchPending(this.pendingChat, msg.message, this.name);
+				if (mine >= 0) {
+					this.settled.set(msg.message.id, this.pendingChat[mine].key);
+					this.pendingChat = this.pendingChat.toSpliced(mine, 1);
+				}
 				// Our playlist landed (possibly all from cache, so no job rows): drop "Loading…".
 				if (msg.message.name === this.name && msg.message.text.startsWith('added playlist') && !this.addNote?.error)
 					this.addNote = null;
 				this.chat = [...this.chat.slice(-(CHAT_KEEP - 1)), msg.message];
 				break;
+			}
 			case 'react':
 				if (msg.listener_id !== this.you) {
 					this.float(msg.emoji, msg.name, false);

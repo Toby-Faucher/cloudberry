@@ -10,11 +10,34 @@ export type ChatItem =
 
 const isPresence = (m: ChatMessage) => m.kind === 'event' && (m.text === 'joined' || m.text === 'left');
 
-const names = (xs: string[]) => [...new Set(xs)].join(', ');
+/** "Ana", "Ana and Sam", "Ana, Sam and Priya". */
+const names = (xs: string[]) => {
+	const u = [...new Set(xs)];
+	return u.length < 2 ? (u[0] ?? '') : `${u.slice(0, -1).join(', ')} and ${u.at(-1)}`;
+};
+
+/** A message we sent that the server hasn't echoed yet. */
+export interface PendingChat {
+	key: number;
+	text: string;
+	failed: boolean;
+}
+/** No echo this long after sending: show it as not sent, with a retry. */
+export const PENDING_MS = 10_000;
+
+/**
+ * The server echoed `m`. Which of our pending messages does it settle? The oldest one from us with
+ * the same text (the server trims, so compare trimmed). -1 if it isn't ours or nothing matches.
+ */
+export function matchPending(pending: PendingChat[], m: ChatMessage, me: string): number {
+	if (m.kind !== 'user' || m.name !== me) return -1;
+	const t = m.text.trim();
+	return pending.findIndex((p) => p.text.trim() === t);
+}
 
 /**
  * 1. A "left" followed by a "joined" from the same name within 60 s is a reconnect: both hidden.
- * 2. Runs of consecutive joined/left events become one quiet line: "Ana, Sam joined · Priya left".
+ * 2. Runs of consecutive joined/left events become one quiet line: "Ana and Sam joined, Priya left".
  */
 export function collapsePresence(msgs: ChatMessage[]): ChatItem[] {
 	const hidden = new Set<number>();
@@ -38,7 +61,7 @@ export function collapsePresence(msgs: ChatMessage[]): ChatItem[] {
 		if (!run.length) return;
 		const joined = names(run.filter((m) => m.text === 'joined').map((m) => m.name));
 		const left = names(run.filter((m) => m.text === 'left').map((m) => m.name));
-		const text = [joined && `${joined} joined`, left && `${left} left`].filter(Boolean).join(' · ');
+		const text = [joined && `${joined} joined`, left && `${left} left`].filter(Boolean).join(', ');
 		out.push({ kind: 'presence', key: run[0].id, at: run.at(-1)!.at, text });
 		run = [];
 	};

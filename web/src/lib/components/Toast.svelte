@@ -57,11 +57,11 @@
 		gap: 14px;
 		padding: 10px 10px 10px 16px;
 		border-radius: 14px;
-		background: var(--ink);
-		color: var(--bg);
+		background: var(--surface);
+		color: var(--ink);
 		font-size: 0.92rem;
 		font-weight: 550;
-		box-shadow: var(--shadow-pop);
+		box-shadow: var(--sticker);
 		pointer-events: auto;
 	}
 	.toast.poke {
@@ -92,20 +92,12 @@
 		padding: 5px 10px;
 		border-radius: 9px;
 		font-weight: 600;
-		/* The toast is inverted (ink on light theme), so the accent text flips too. */
-		color: var(--berry-400);
-		background: color-mix(in oklab, var(--bg) 10%, transparent);
-		transition:
-			background-color 160ms var(--ease-out),
-			transform 120ms var(--ease-out);
-	}
-	@media (prefers-color-scheme: dark) {
-		/* Toast is light here, so the orange has to be the deep one. */
-		.undo {
-			color: var(--berry-700);
-		}
+		font-family: var(--font-display);
+		color: var(--accent-ink);
+		background: var(--accent-soft);
+		transition: background-color 160ms var(--ease-out);
 	}
 	.undo:hover {
-		background: color-mix(in oklab, var(--bg) 18%, transparent);
+		background: color-mix(in oklab, var(--accent-soft) 70%, var(--accent));
 	}
 </style>
