@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { fly } from 'svelte/transition';
-	import { cubicOut } from 'svelte/easing';
+	import { quartOut } from 'svelte/easing';
 	import type { Station } from '#lib/station.svelte.ts';
 	import { store, ui, WIDE_QUERY } from '#lib/ui.svelte.ts';
 	import { dur } from '#lib/util.ts';
@@ -23,7 +23,7 @@
 
 {#if ui.wide}
 	{#if ui.dock}
-		<aside class="dock" aria-label="Chat" transition:fly={{ x: 24, duration: dur(260), easing: cubicOut }}>
+		<aside class="dock" aria-label="Chat" transition:fly={{ x: 16, duration: dur(200), easing: quartOut }}>
 			<ChatPanel {station} onclose={() => store('cloudberry.chat', (ui.dock = false))} />
 		</aside>
 	{/if}
@@ -40,23 +40,21 @@
 {/if}
 
 <style>
-	/* A tall cream sticker stuck to the right edge of the bog. */
+	/* The log module: full height on the right, divided from the deck area by one hairline. */
 	.dock {
 		position: sticky;
-		top: 16px;
-		height: calc(100dvh - 36px);
-		margin: 16px 16px 20px 0;
-		border-radius: var(--r-lg);
+		top: 0;
+		height: 100dvh;
 		background: var(--surface);
-		box-shadow: var(--sticker);
+		border-left: 1px solid var(--line);
 		overflow: hidden;
 	}
 	:global(.chat-scrim) {
 		position: fixed;
 		inset: 0;
 		z-index: 60;
-		background: color-mix(in oklab, var(--shade) 55%, transparent);
-		animation: scrim-in 200ms var(--ease-out);
+		background: rgb(0 0 0 / 0.32);
+		animation: scrim-in 160ms var(--ease-out);
 	}
 	:global(.chat-drawer) {
 		position: fixed;
@@ -66,10 +64,11 @@
 		z-index: 61;
 		height: min(78dvh, 640px);
 		padding-bottom: env(safe-area-inset-bottom);
-		border-radius: 24px 24px 0 0;
+		border-radius: var(--r-lg) var(--r-lg) 0 0;
 		background: var(--surface);
-		box-shadow: 0 -4px 0 var(--die);
-		animation: drawer-in 320ms var(--ease-out);
+		border-top: 1px solid var(--line);
+		box-shadow: var(--shadow-lift);
+		animation: drawer-in 240ms var(--ease-out);
 		outline: none;
 	}
 	@keyframes scrim-in {
@@ -89,8 +88,9 @@
 			top: 0;
 			width: 380px;
 			height: 100dvh;
-			border-radius: 24px 0 0 24px;
-			box-shadow: -4px 0 0 var(--die);
+			border-radius: 0;
+			border-top: 0;
+			border-left: 1px solid var(--line);
 			animation-name: sheet-in;
 		}
 	}

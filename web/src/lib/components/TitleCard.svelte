@@ -4,8 +4,8 @@
 	import { viz } from '#lib/visualizer/state.svelte.ts';
 
 	/**
-	 * Quirk 2: on a track change the title slams in big and centred (smeared), holds ~1.2 s, then
-	 * flies into its spot in the now-playing card (#np-title). Never blocks input.
+	 * Quirk 2: on a track change the title drops in big and centred on a graphite plate (smeared),
+	 * holds ~1.2 s, then flies into its spot in the deck (#np-title). Never blocks input.
 	 */
 	let { station }: { station: Station } = $props();
 
@@ -32,7 +32,7 @@
 		await Promise.resolve(); // let the card mount
 		await new Promise(requestAnimationFrame);
 		if (!el || seq !== c.seq) return;
-		await smearAnimate(el, { y: [-320, 0], scale: [1.5, 1], rotate: [-8, -2], opacity: [0, 1], duration: 560, ease: 'outBack(1.5)', clear: false });
+		await smearAnimate(el, { y: [-240, 0], opacity: [0, 1], duration: 340, ease: 'outQuart', clear: false });
 		await wait(1200);
 		if (seq !== c.seq || !el) return;
 		const target = document.getElementById('np-title');
@@ -47,9 +47,8 @@
 			x: [0, dx],
 			y: [0, dy],
 			scale: [1, Math.max(0.2, ratio)],
-			rotate: [-2, 0],
 			opacity: [1, 1, 0.9, 0],
-			duration: 480,
+			duration: 420,
 			ease: 'inOutQuart',
 			clear: false
 		});
@@ -61,8 +60,9 @@
 	{#key card.seq}
 		<div class="layer" aria-hidden="true">
 			<div class="slab" bind:this={el}>
+				<p class="top"><span class="led on"></span>On air</p>
 				<h2>{card.title}</h2>
-				<p>added by <strong>{card.by}</strong></p>
+				<p class="by">Added by <strong>{card.by}</strong></p>
 			</div>
 		</div>
 	{/key}
@@ -80,29 +80,46 @@
 	}
 	.slab {
 		max-width: min(92vw, 880px);
-		padding: 26px 34px 24px;
-		border-radius: 28px;
-		background: var(--accent);
-		color: var(--on-accent);
-		text-align: center;
-		box-shadow: var(--lip), var(--sticker);
+		padding: 20px 28px 26px;
+		border-radius: var(--r-lg);
+		background: var(--ink);
+		color: var(--surface);
+		box-shadow: var(--shadow-lift);
 		opacity: 0;
 	}
+	.top,
+	.by {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+	.top {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 14px;
+	}
 	h2 {
-		font-size: clamp(2.2rem, 1.4rem + 3.6vw, 4.4rem);
-		font-weight: 700;
-		line-height: 1.02;
-		letter-spacing: -0.015em;
+		font-size: clamp(2.2rem, 1.4rem + 3.6vw, 4.5rem);
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: -0.035em;
 		text-wrap: balance;
 		display: -webkit-box;
 		-webkit-line-clamp: 3;
 		line-clamp: 3;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+		padding-bottom: 0.06em;
 	}
-	p {
-		margin: 12px 0 0;
-		font-size: clamp(0.95rem, 0.85rem + 0.4vw, 1.15rem);
-		font-weight: 550;
+	.by {
+		margin-top: 16px;
+	}
+	.by strong {
+		font-weight: 600;
+		color: var(--berry-400);
 	}
 </style>

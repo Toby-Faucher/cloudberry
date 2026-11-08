@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { Tooltip } from 'bits-ui';
-	import { scale } from 'svelte/transition';
-	import { backOut } from 'svelte/easing';
-	import { Keyboard } from '@lucide/svelte';
+	import { fade } from 'svelte/transition';
 	import Icon from '#lib/icons/Icon.svelte';
 	import type { Station } from '#lib/station.svelte.ts';
 	import { chatVisible, store, toggleChat, ui } from '#lib/ui.svelte.ts';
@@ -50,7 +48,7 @@
 	{/if}
 	<Tooltip.Root>
 		<Tooltip.Trigger class="icon-btn desk" aria-label="Keyboard shortcuts" onclick={() => (ui.help = true)}>
-			<Keyboard size={18} />
+			<Icon name="keyboard" size={20} />
 		</Tooltip.Trigger>
 		{@render tip('Shortcuts (?)')}
 	</Tooltip.Root>
@@ -63,7 +61,7 @@
 		>
 			<Icon name="chat" size={21} />
 			{#if unread}
-				<span class="badge num" in:scale={{ start: 0.4, duration: dur(260), easing: backOut }}>{unread > 9 ? '9+' : unread}</span>
+				<span class="badge num" in:fade={{ duration: dur(80) }}>{unread > 9 ? '9+' : unread}</span>
 			{/if}
 		</Tooltip.Trigger>
 		{@render tip(chatVisible() ? 'Hide chat (/)' : 'Chat (/)')}
@@ -74,42 +72,27 @@
 	.tools {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-	}
-	/* On the bog: small cream tiles on a hard drop; pressed ones sink. */
-	.tools :global(.icon-btn) {
-		border-radius: 12px;
-		background: var(--surface);
-		color: var(--ink);
-		box-shadow: 0 4px 0 var(--shade);
-	}
-	.tools :global(.icon-btn.on) {
-		background: var(--accent);
-		translate: 0 3px;
-		box-shadow:
-			inset 0 -3px 0 rgb(110 45 0 / 0.28),
-			0 1px 0 var(--shade);
+		gap: 2px;
 	}
 	.tools :global(.chat-btn) {
 		position: relative;
-		width: 40px;
-		height: 40px;
 	}
+	/* Unread count: a tiny orange readout on the key's corner. */
 	.badge {
 		position: absolute;
-		top: -1px;
-		right: -2px;
-		min-width: 17px;
-		height: 17px;
-		padding: 0 4px;
-		border-radius: 99px;
+		top: 2px;
+		right: 0;
+		min-width: 16px;
+		height: 14px;
+		padding: 0 3px;
+		border-radius: var(--r-sm);
 		display: grid;
 		place-items: center;
-		font-size: 0.66rem;
-		font-weight: 700;
+		font-family: var(--font-mono);
+		font-size: 0.5625rem;
+		font-weight: 600;
 		background: var(--accent);
 		color: var(--on-accent);
-		box-shadow: 0 0 0 2px var(--die);
 	}
 	/* No keyboard / desktop notifications to speak of on phones (and no room). */
 	@media (pointer: coarse), (max-width: 560px) {

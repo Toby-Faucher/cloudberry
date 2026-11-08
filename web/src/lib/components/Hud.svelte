@@ -1,11 +1,11 @@
 <script lang="ts">
 	import type { Station } from '#lib/station.svelte.ts';
 	import { fmtCountdown, showCountdown, syncLevel } from '#lib/game.ts';
-	import { motion, pop } from '#lib/motion/motion.ts';
+	import { motion } from '#lib/motion/motion.ts';
 
 	/**
-	 * Header HUD: a tiny signal meter for sync (quirk 5; ms on hover, focus or tap) and the
-	 * up-next countdown sticker (quirk 8). Connection state lives on the art as the on-air sticker.
+	 * Header readouts: a four-segment sync meter (quirk 5; ms on hover, focus or tap) and the
+	 * up-next countdown (quirk 8). Connection state lives on the screen's status lamp.
 	 */
 	let { station }: { station: Station } = $props();
 
@@ -33,15 +33,15 @@
 	const counting = $derived(showCountdown(remaining, !!s?.playing, !!next));
 	const secs = $derived(counting ? fmtCountdown(remaining) : '');
 
-	// Countdown: slap on, then a pulse on every second.
-	let up = $state<HTMLElement>();
+	// Countdown: slides in, then the digits roll down a notch every second.
+	let digits = $state<HTMLElement>();
 	let prevSecs = '';
 	$effect(() => {
-		if (secs && prevSecs && secs !== prevSecs) pop(up, 0.08);
+		if (secs && prevSecs && secs !== prevSecs) motion(digits, { y: [-9, 0], opacity: [0.2, 1], duration: 160, ease: 'outQuart' });
 		prevSecs = secs;
 	});
-	function slapIn(el: HTMLElement) {
-		motion(el, { y: [-14, 0], scale: [0.8, 1], rotate: [-8, -2], opacity: [0, 1], duration: 420, ease: 'outBack(2)', clear: false });
+	function slideIn(el: HTMLElement) {
+		motion(el, { x: [-8, 0], opacity: [0, 1], duration: 220, ease: 'outQuart' });
 	}
 </script>
 
@@ -53,15 +53,17 @@
 		title="How far your speaker is from everyone else's. Under 10 ms is spot on."
 		onclick={() => (peek = !peek)}
 	>
+		<span class="label">Sync</span>
 		<span class="bars" aria-hidden="true">
-			{#each [0, 1, 2, 3] as i (i)}<span class="b" class:lit={i < lit} style:--h="{6 + i * 4}px"></span>{/each}
+			{#each [0, 1, 2, 3] as i (i)}<span class="b" class:lit={i < lit}></span>{/each}
 		</span>
 		<span class="ms num" aria-hidden="true">{ms || '—'}</span>
 	</button>
 
 	{#if counting && next}
-		<span class="upnext" bind:this={up} use:slapIn>
-			<span class="in">next in <b class="num">{secs}</b></span>
+		<span class="upnext" use:slideIn>
+			<span class="label">Next in</span>
+			<span class="win"><b class="num" bind:this={digits}>{secs}</b></span>
 			<span class="t">{next.track.title}</span>
 		</span>
 	{/if}
@@ -71,39 +73,40 @@
 	.hud {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 20px;
 		min-width: 0;
 	}
-	/* Signal meter: four chunky bars on a small cream tile. */
 	.meter {
 		flex: none;
 		display: inline-flex;
-		align-items: flex-end;
+		align-items: center;
 		gap: 8px;
-		height: 36px;
-		padding: 0 10px 8px;
-		border-radius: 10px;
-		background: var(--surface);
-		box-shadow: 0 4px 0 var(--shade);
-		color: var(--ink-3);
+		height: 32px;
+		padding: 0 8px;
+		margin-left: -8px;
+		border-radius: var(--r-md);
 	}
+	@media (hover: hover) {
+		.meter:hover {
+			background: var(--surface-2);
+		}
+	}
+	/* Four equal LED segments, like a level meter. */
 	.bars {
 		display: flex;
-		align-items: flex-end;
-		gap: 3px;
+		gap: 2px;
 	}
 	.b {
-		width: 5px;
-		height: var(--h);
-		border-radius: 2px;
-		background: color-mix(in oklab, var(--ink-3) 30%, transparent);
-		transition: background-color 300ms var(--ease-out);
+		width: 4px;
+		height: 12px;
+		background: var(--led-off);
+		transition: background-color 200ms var(--ease-out);
 	}
 	.good .b.lit {
-		background: var(--ok);
+		background: var(--ink);
 	}
 	.fair .b.lit {
-		background: var(--accent-line);
+		background: var(--accent);
 	}
 	.poor .b.lit {
 		background: var(--danger);
@@ -111,12 +114,11 @@
 	/* The number only when you ask: hover, keyboard focus, or a tap. */
 	.ms {
 		display: none;
-		font-family: var(--font-display);
-		font-weight: 650;
-		font-size: 0.9rem;
-		line-height: 1;
+		font-family: var(--font-mono);
+		font-size: 0.6875rem;
 		color: var(--ink);
-		min-width: 3.4em;
+		min-width: 4.2em;
+		text-align: left;
 	}
 	.meter.peek .ms,
 	.meter:focus-visible .ms {
@@ -133,31 +135,35 @@
 		min-width: 0;
 		display: inline-flex;
 		align-items: center;
-		gap: 8px;
-		height: 36px;
-		padding: 0 12px;
-		border-radius: 10px;
-		background: var(--accent-soft);
-		color: var(--ink);
-		box-shadow:
-			0 0 0 3px var(--die),
-			0 5px 0 3px var(--shade);
-		font-family: var(--font-display);
-		font-weight: 600;
+		gap: 10px;
+		height: 32px;
+		padding-left: 20px;
+		border-left: 1px solid var(--line);
 		white-space: nowrap;
 	}
-	.in b {
+	/* The digits sit in a window so a roll clips at its edge. */
+	.win {
+		display: inline-grid;
+		overflow: hidden;
+		height: 1.5rem;
+		align-items: center;
+	}
+	.win b {
+		display: block;
+		font-family: var(--font-dot);
+		font-weight: 800;
+		font-size: 1.375rem;
+		line-height: 1;
 		color: var(--accent-ink);
-		font-weight: 700;
 	}
 	.upnext .t {
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		font-family: var(--font-body);
-		font-size: 0.85rem;
-		font-weight: 550;
-		max-width: 22ch;
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--ink);
+		max-width: 26ch;
 	}
 	@media (max-width: 560px) {
 		.upnext .t {

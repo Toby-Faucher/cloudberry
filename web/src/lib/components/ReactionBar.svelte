@@ -2,44 +2,49 @@
 	import type { Station } from '#lib/station.svelte.ts';
 	import { REACTIONS } from '#lib/types.ts';
 	import { STICKERS } from '#lib/reactions.ts';
-	import Sticker from '#lib/icons/Sticker.svelte';
+	import Icon from '#lib/icons/Icon.svelte';
 
 	let { station }: { station: Station } = $props();
-	// A sticker sheet, not a toolbar: each one sits a little crooked.
-	const tilt = [-6, 4, -2, 5, -4, 3];
+
+	// The key flashes orange for a beat when pressed: the press answers back even before the float.
+	let flash = $state<string | null>(null);
+	let timer = 0;
+	function react(e: (typeof REACTIONS)[number]) {
+		station.react(e);
+		flash = e;
+		clearTimeout(timer);
+		timer = window.setTimeout(() => (flash = null), 160);
+	}
 </script>
 
-<div class="sheet" role="group" aria-label="React for everyone">
-	{#each REACTIONS as e, i (e)}
-		<button class="r" style:--tilt="{tilt[i]}deg" aria-label="React {STICKERS[e].label}" title={STICKERS[e].label} onclick={() => station.react(e)}>
-			<Sticker emoji={e} size={40} />
+<div class="pad" role="group" aria-label="React for everyone">
+	{#each REACTIONS as e (e)}
+		<button class="r key" class:flash={flash === e} aria-label="React {STICKERS[e].label}" title={STICKERS[e].label} onclick={() => react(e)}>
+			<Icon name={STICKERS[e].id} size={20} />
 		</button>
 	{/each}
 </div>
 
 <style>
-	.sheet {
-		display: flex;
-		justify-content: center;
-		flex-wrap: wrap;
-		gap: 2px;
-		margin: 0 0 18px;
+	/* Six small keys in one row, edge to edge: a pad, not a sticker sheet. */
+	.pad {
+		display: grid;
+		grid-template-columns: repeat(6, minmax(0, 1fr));
+		gap: 6px;
+		margin: 16px 4px 0;
 	}
 	.r {
-		display: grid;
-		place-items: center;
-		width: 50px;
-		height: 50px;
-		border-radius: var(--r-md);
-		rotate: var(--tilt);
-		transition:
-			rotate 180ms var(--ease-out),
-			translate 180ms var(--ease-out);
+		height: 44px;
+		color: var(--ink-2);
 	}
 	@media (hover: hover) {
 		.r:hover {
-			rotate: 0deg;
-			translate: 0 -4px;
+			color: var(--ink);
 		}
+	}
+	.r.flash {
+		background: var(--accent);
+		color: var(--on-accent);
+		transition: none;
 	}
 </style>

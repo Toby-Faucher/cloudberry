@@ -10,7 +10,8 @@
 	import Lyrics from './Lyrics.svelte';
 	import ReactionBar from './ReactionBar.svelte';
 	import ReactionFloats from './ReactionFloats.svelte';
-	import { ModeSwitch, Visualizer, startAnalysis, stopAnalysis, viz } from '#lib/visualizer/index.ts';
+	import { Visualizer, startAnalysis, stopAnalysis, viz } from '#lib/visualizer/index.ts';
+	import { MODES, setLean, setMode } from '#lib/visualizer/state.svelte.ts';
 	import Berry from './Berry.svelte';
 	import HoldSkip from './HoldSkip.svelte';
 	import ComboMeter from './ComboMeter.svelte';
@@ -27,15 +28,15 @@
 	const cur = $derived(s?.current ?? null);
 	const durationMs = $derived(cur?.track.duration_ms ?? 0);
 
-	// The old LIVE chip, folded into the art as an on-air sticker.
+	// Connection + transport state, as the screen's status lamp.
 	const air = $derived(
 		station.status === 'connecting'
-			? { cls: 'tuning', text: 'tuning in' }
+			? { cls: 'blink', text: 'Tuning in' }
 			: station.status === 'reconnecting'
-				? { cls: 'lost', text: 'reconnecting' }
+				? { cls: 'blink bad', text: 'Reconnecting' }
 				: s?.playing && cur
-					? { cls: 'on', text: 'on air' }
-					: { cls: 'off', text: 'paused' }
+					? { cls: 'on', text: 'On air' }
+					: { cls: '', text: cur ? 'Paused' : 'Idle' }
 	);
 
 	// Live position, advanced every animation frame from the shared timeline.
@@ -75,126 +76,136 @@
 		station.send({ type: 'seek', position_ms: Math.min(durationMs - 1000, Math.max(0, shown + d)) });
 	}
 
-	// Art swap: the new cover flings in from the right with smear (not on first paint).
+	// Art swap: the new cover slides in from the right with smear (not on first paint).
 	let ready = false;
 	onMount(() => (ready = true));
 	function artIn(el: HTMLElement) {
-		if (ready) smearAnimate(el, { x: [140, 0], rotate: [9, 0], scale: [0.86, 1], opacity: [0, 1], duration: 620, delay: 90 });
+		if (ready) smearAnimate(el, { x: [120, 0], opacity: [0, 1], duration: 380, delay: 60, ease: 'outQuart' });
 	}
-	function artOut(node: Element) {
+	function artOut() {
 		return {
-			duration: dur(240),
-			css: (t: number) => `opacity:${t};translate:${(t - 1) * 90}px 0;rotate:${(t - 1) * 6}deg`
+			duration: dur(180),
+			css: (t: number) => `opacity:${t};translate:${(t - 1) * 80}px 0`
 		};
 	}
 
-	function trackIn(node: Element) {
+	function trackIn() {
 		return {
-			duration: dur(520),
-			delay: dur(80),
+			duration: dur(300),
+			delay: dur(60),
 			css: (t: number) => {
 				const e = 1 - Math.pow(1 - t, 4);
-				return `opacity:${e};transform:translateY(${(1 - e) * 14}px) scale(${0.97 + 0.03 * e})`;
+				return `opacity:${e};transform:translateY(${(1 - e) * 8}px)`;
 			}
 		};
 	}
-	function trackOut(node: Element) {
+	function trackOut() {
 		return {
-			duration: dur(260),
-			css: (t: number) => `opacity:${t};transform:translateY(${(t - 1) * 10}px) scale(${0.98 + 0.02 * t})`
+			duration: dur(160),
+			css: (t: number) => `opacity:${t};transform:translateY(${(t - 1) * 6}px)`
 		};
 	}
+
+	const MODE_LABEL: Record<string, string> = { halo: 'Halo', bloom: 'Bloom', bars: 'Bars' };
 </script>
 
 <!--
-	Stacking (the Bloom bug): .now is its own stacking context. Visualizer layers sit at z -1, i.e.
-	under every in-flow block of the deck (title, controls), however far the aura bleeds. The art
-	(z 3), the on-air sticker (4), reaction floats (5) and the combo (6) sit above the deck.
+	Stacking (the Bloom bug): .now is its own stacking context. Visualizer layers sit at z -1 inside
+	the screen, under the art (z 3); reaction floats (5) and the combo (6) sit above it.
 -->
 <section class="now" aria-label="Now playing">
-	<div class="stage" class:halo={viz.mode === 'halo'}>
-		<div class="disc" class:on={s?.playing} aria-hidden="true"></div>
-		{#if viz.mode !== 'bars'}<Visualizer mode={viz.mode} />{/if}
-		<div class="stack art-layer">
-			{#key cur?.queue_id}
-				<div class="swap" use:artIn out:artOut>
-					<div class="art-wrap">
-						{#if cur}
-							<Art track={cur.track} size="100%" />
-						{:else}
-							<div class="idle-art"><Berry bead={44} opacity={0.6} /></div>
-						{/if}
+	<div class="screen" class:halo={viz.mode === 'halo'}>
+		<span class="status label" role="status"><span class="led {air.cls}"></span>{air.text}</span>
+		<div class="stage">
+			{#if viz.mode !== 'bars'}<Visualizer mode={viz.mode} />{/if}
+			<div class="stack art-layer">
+				{#key cur?.queue_id}
+					<div class="swap" use:artIn out:artOut>
+						<div class="art-wrap">
+							{#if cur}
+								<Art track={cur.track} size="100%" />
+							{:else}
+								<div class="idle-art"><Berry bead="9cqi" opacity={0.5} /></div>
+							{/if}
+						</div>
 					</div>
-				</div>
-			{/key}
+				{/key}
+			</div>
 		</div>
-		<span class="air {air.cls}" role="status">{air.text}</span>
 		<ReactionFloats {station} />
 		<ComboMeter {station} />
 	</div>
 
-	<div class="deck card">
-		<div class="stack meta">
-			{#key cur?.queue_id}
-				<div in:trackIn out:trackOut>
-					{#if cur}
-						<h1 class="title" id="np-title" title={cur.track.title}>{cur.track.title}</h1>
-						<p class="by">added by <span class="who"><Avatar name={cur.added_by} size={22} />{cur.added_by}</span></p>
-					{:else}
-						<h1 class="title" id="np-title">Dead air</h1>
-						<p class="by">
-							{s?.queue.length ? 'Hit play and the next one starts.' : 'Drop a YouTube link and get this going.'}
-						</p>
-					{/if}
-				</div>
-			{/key}
-		</div>
-
-		<Lyrics {station} />
-
-		<div
-			class="progress"
-			class:disabled={!cur}
-			role="slider"
-			tabindex={cur ? 0 : -1}
-			aria-label="Seek"
-			aria-valuemin={0}
-			aria-valuemax={Math.round(durationMs / 1000)}
-			aria-valuenow={Math.round(shown / 1000)}
-			aria-valuetext="{fmtTime(shown)} of {fmtTime(durationMs)}"
-			onclick={seekFromPointer}
-			onkeydown={seekKey}
-		>
-			<div class="rail"><div class="fill" style:transform="scaleX({frac})"></div></div>
-		</div>
-		<div class="times num">
-			<span>{fmtTime(shown)}</span>
-			<span>{cur ? fmtTime(durationMs) : '0:00'}</span>
-		</div>
-
-		<div class="controls">
-			<div class="vol">
-				<Icon name="volume" size={20} />
-				<Slider.Root type="single" bind:value={volume} min={0} max={1} step={0.01} class="vol-slider" aria-label="Volume (only for you)">
-					<span class="vol-rail"><Slider.Range class="vol-range" /></span>
-					<Slider.Thumb index={0} class="vol-thumb" />
-				</Slider.Root>
+	<div class="meta stack">
+		{#key cur?.queue_id}
+			<div in:trackIn out:trackOut>
+				{#if cur}
+					<h1 class="title" id="np-title" title={cur.track.title}>{cur.track.title}</h1>
+					<p class="by"><span class="label">Added by</span><span class="who"><Avatar name={cur.added_by} size={18} />{cur.added_by}</span></p>
+				{:else}
+					<h1 class="title" id="np-title">Dead air</h1>
+					<p class="by plain">
+						{s?.queue.length ? 'Hit play and the next one starts.' : 'Drop a YouTube link and get this going.'}
+					</p>
+				{/if}
 			</div>
+		{/key}
+	</div>
 
-			<button
-				class="play"
-				aria-label={s?.playing ? 'Pause for everyone' : 'Play for everyone'}
-				disabled={!cur && !s?.queue.length}
-				onclick={() => station.togglePlay()}
-			>
-				<span class="glyph" class:is-play={!s?.playing}><Icon name={s?.playing ? 'pause' : 'play'} size={34} /></span>
-			</button>
+	<Lyrics {station} />
 
-			<div class="right">
-				{#if ui.lines}
+	<div class="readout">
+		<span class="elapsed num" aria-hidden="true">{fmtTime(shown)}</span>
+		<span class="total num" aria-hidden="true">{cur ? fmtTime(durationMs) : '0:00'}</span>
+	</div>
+	<div
+		class="progress"
+		class:disabled={!cur}
+		role="slider"
+		tabindex={cur ? 0 : -1}
+		aria-label="Seek"
+		aria-valuemin={0}
+		aria-valuemax={Math.round(durationMs / 1000)}
+		aria-valuenow={Math.round(shown / 1000)}
+		aria-valuetext="{fmtTime(shown)} of {fmtTime(durationMs)}"
+		onclick={seekFromPointer}
+		onkeydown={seekKey}
+	>
+		<!-- Raw rAF transforms, never eased (sync is sacred). -->
+		<div class="rail"><div class="fill" style:transform="scaleX({frac})"></div></div>
+		<div class="head-track" style:transform="translateX({frac * 100}%)"><span class="head"></span></div>
+	</div>
+
+	<div class="controls">
+		<div class="vol">
+			<Slider.Root type="single" bind:value={volume} min={0} max={1} step={0.01} class="fader" aria-label="Volume (only for you)">
+				<span class="fader-rail"><Slider.Range class="fader-range" /></span>
+				<Slider.Thumb index={0} class="fader-cap" />
+			</Slider.Root>
+			<span class="label cap-label"><Icon name="volume" size={12} />Vol</span>
+		</div>
+
+		<div class="keys">
+			<div class="slot">
+				<button
+					class="play"
+					aria-label={s?.playing ? 'Pause for everyone' : 'Play for everyone'}
+					disabled={!cur && !s?.queue.length}
+					onclick={() => station.togglePlay()}
+				>
+					<Icon name={s?.playing ? 'pause' : 'play'} size={24} />
+				</button>
+				<span class="label cap-label" aria-hidden="true">{s?.playing ? 'Pause' : 'Play'}</span>
+			</div>
+			<div class="slot">
+				<HoldSkip {station} disabled={!cur} />
+				<span class="label cap-label" aria-hidden="true">Hold skip</span>
+			</div>
+			{#if ui.lines}
+				<div class="slot">
 					<button
-						class="icon-btn"
-						class:on={ui.lyrics}
+						class="key sq"
+						class:lit={ui.lyrics}
 						aria-label="Lyrics"
 						aria-pressed={ui.lyrics}
 						title={ui.lyrics ? 'Hide lyrics' : 'Show lyrics'}
@@ -202,64 +213,41 @@
 					>
 						<Icon name="mic" size={20} />
 					</button>
-				{/if}
-				<HoldSkip {station} disabled={!cur} />
-			</div>
+					<span class="label cap-label" aria-hidden="true">Lyrics</span>
+				</div>
+			{/if}
 		</div>
+	</div>
 
-		<ReactionBar {station} />
+	<ReactionBar {station} />
 
-		{#if viz.mode === 'bars'}<Visualizer mode="bars" />{/if}
-		<ModeSwitch />
+	{#if viz.mode === 'bars'}<div class="bars"><Visualizer mode="bars" /></div>{/if}
+
+	<div class="modes">
+		<div class="seg" role="group" aria-label="Visualizer style">
+			{#each MODES as m (m)}
+				<button class="seg-btn" aria-pressed={viz.mode === m} onclick={() => setMode(m)}>
+					<span class="led" class:on={viz.mode === m}></span>{MODE_LABEL[m] ?? m}
+				</button>
+			{/each}
+		</div>
+		<button class="key lean" onclick={() => setLean(true)} aria-label="Lean back (F)" title="Lean back (F)">
+			<Icon name="expand" size={18} />
+		</button>
 	</div>
 </section>
 
 <style>
+	/* The deck: the one raised object on the page. Modules inside are split by hairlines. */
 	.now {
 		position: relative;
 		isolation: isolate;
 		display: flex;
 		flex-direction: column;
-	}
-
-	/* ---------- the art: the one big thing on the page ---------- */
-	.stage {
-		position: relative; /* containing block for the visualizers; NOT a stacking context */
-		width: min(100%, 372px);
-		margin: 6px auto 0;
-	}
-	.stage :global(canvas),
-	.stage :global(.glow),
-	.stage :global(.css),
-	.disc {
-		z-index: -1;
-	}
-	/* A flat tinted disc behind the art that swells with the music: a shape, not a glow. */
-	.disc {
-		position: absolute;
-		inset: -8%;
-		border-radius: 50%;
-		background: var(--track-tint);
-		opacity: 0.4;
-		transform: scale(calc(0.9 + var(--energy) * 0.35));
-		will-change: transform;
-		pointer-events: none;
-	}
-	.halo .disc {
-		display: none; /* Halo draws its own disc */
-	}
-	.disc:not(.on) {
-		opacity: 0.25;
-		transform: scale(0.9);
-		transition:
-			opacity 1.2s var(--ease-out),
-			transform 1.2s var(--ease-out);
-	}
-
-	.art-layer {
-		position: relative;
-		z-index: 3;
-		scale: var(--viz-pulse, 1); /* art breathes on beats */
+		padding: 12px;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: var(--r-lg);
 	}
 	.stack {
 		display: grid;
@@ -268,25 +256,64 @@
 		grid-area: 1 / 1;
 		min-width: 0;
 	}
+
+	/* ---------- the screen: a recessed square well; the art is the one image on the panel ---------- */
+	.screen {
+		position: relative;
+		aspect-ratio: 1;
+		border-radius: var(--r-md);
+		background: var(--surface-2);
+		box-shadow: inset 0 0 0 1px var(--line);
+		overflow: hidden;
+		display: grid;
+		place-items: center;
+		container-type: inline-size;
+	}
+	.status {
+		position: absolute;
+		z-index: 4;
+		top: 12px;
+		left: 12px;
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 5px 7px;
+		border-radius: var(--r-sm);
+		background: color-mix(in oklab, var(--surface) 88%, transparent);
+		color: var(--ink);
+		pointer-events: none;
+	}
+	.stage {
+		position: relative; /* containing block for the visualizers; NOT a stacking context */
+		width: 78%;
+	}
+	.stage :global(canvas),
+	.stage :global(.glow),
+	.stage :global(.css) {
+		z-index: -1;
+	}
+	.art-layer {
+		position: relative;
+		z-index: 3;
+		scale: var(--viz-pulse, 1); /* art breathes on beats */
+	}
 	.art-wrap {
 		position: relative;
 		aspect-ratio: 1;
-		border-radius: 24px;
+		border-radius: var(--r-sm);
 		overflow: hidden;
-		rotate: -2.5deg;
-		/* The sticker: white die-cut, hard drop onto the deck. */
-		box-shadow:
-			0 0 0 6px var(--die),
-			0 10px 0 6px var(--shade);
+		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08);
 		transition:
-			border-radius 480ms var(--ease-in-out),
-			scale 480ms var(--ease-in-out),
-			rotate 480ms var(--ease-in-out);
+			border-radius 320ms var(--ease-in-out),
+			scale 320ms var(--ease-in-out);
+	}
+	/* Halo rings the art: the cover turns into the label of a disc. */
+	.halo .stage {
+		width: 100%;
 	}
 	.halo .art-wrap {
 		border-radius: 50%;
 		scale: 0.66; /* = 2 * ART in Halo.svelte */
-		rotate: 0deg;
 	}
 	.art-wrap :global(.art) {
 		border-radius: 0;
@@ -294,270 +321,331 @@
 	.idle-art {
 		width: 100%;
 		height: 100%;
-		background: var(--surface-2);
+		background: var(--surface);
 		display: grid;
 		place-items: center;
 	}
 
-	/* On-air sticker, slapped on the art's corner. */
-	.air {
-		position: absolute;
-		z-index: 4;
-		top: -6px;
-		left: -10px;
-		rotate: -9deg;
-		padding: 4px 12px 5px;
-		border-radius: var(--r-sm);
-		font-family: var(--font-display);
-		font-size: 1.05rem;
-		font-weight: 700;
-		line-height: 1.1;
-		background: var(--surface-2);
-		color: var(--ink);
-		box-shadow:
-			0 0 0 3px var(--die),
-			0 4px 0 3px var(--shade);
-		pointer-events: none;
-		white-space: nowrap;
-	}
-	.air.on {
-		background: #b8361f; /* blush, deepened so cream text clears 4.5:1 */
-		color: #fbf4e2;
-	}
-	.air.lost {
-		background: var(--berry-300);
-		color: #1d2916;
-	}
-	.halo .air {
-		top: 8%;
-		left: 8%;
-	}
-
-	/* ---------- the deck: cream sticker the art overlaps ---------- */
-	.deck {
-		margin-top: -52px;
-		padding: 76px 28px 22px;
-		display: flex;
-		flex-direction: column;
-	}
+	/* ---------- title ---------- */
 	.meta {
-		text-align: center;
-		min-height: 6.4rem;
+		padding: 16px 4px 0;
+		min-height: 6.2rem;
 	}
-	/* Display-size, confident; second only to the art. */
 	.title {
-		font-size: clamp(1.9rem, 1.3rem + 1.4vw, 2.6rem);
-		font-weight: 700;
-		line-height: 1.06;
-		letter-spacing: -0.025em;
+		font-size: 1.75rem;
+		font-weight: 600;
+		line-height: 1.08;
+		letter-spacing: -0.03em;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		text-wrap: balance;
-		padding-bottom: 0.06em; /* descenders under line-clamp */
+		padding-bottom: 0.06em;
 	}
 	.by {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		gap: 8px;
+		gap: 10px;
 		margin: 10px 0 0;
 		color: var(--ink-2);
-		font-size: 0.9rem;
+		font-size: 0.875rem;
+	}
+	.by.plain {
+		margin-top: 8px;
 	}
 	.who {
 		display: inline-flex;
 		align-items: center;
-		gap: 7px;
-		padding: 3px 12px 3px 3px;
-		border-radius: 999px;
-		background: var(--surface-2);
+		gap: 6px;
 		color: var(--ink);
-		font-weight: 600;
+		font-weight: 550;
 	}
 
-	/* Progress: raw rAF scaleX, never eased (sync is sacred). */
+	/* ---------- readout + meter ---------- */
+	.readout {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		margin: 16px 4px 6px;
+		padding-top: 14px;
+		border-top: 1px solid var(--line);
+	}
+	.elapsed {
+		font-family: var(--font-dot);
+		font-weight: 800;
+		font-size: 2.25rem;
+		line-height: 0.8;
+		color: var(--ink);
+	}
+	.total {
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--ink-2);
+	}
 	.progress {
-		margin-top: 16px;
-		padding: 10px 0;
+		position: relative;
+		margin: 0 4px;
+		padding: 8px 0;
 		cursor: pointer;
 	}
 	.progress.disabled {
 		cursor: default;
 	}
+	/* A segmented meter: 3px cells, 1px gaps. */
 	.rail {
 		height: 10px;
-		border-radius: 99px;
-		background: var(--surface-2);
+		background: var(--line);
+		mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 4px);
 		overflow: hidden;
-		transition: height 160ms var(--ease-out);
-	}
-	@media (hover: hover) {
-		.progress:not(.disabled):hover .rail {
-			height: 14px;
-		}
 	}
 	.fill {
 		height: 100%;
-		background: var(--accent-line);
+		background: var(--ink);
 		transform-origin: left;
-		border-radius: inherit;
 	}
-	.times {
-		display: flex;
-		justify-content: space-between;
-		font-family: var(--font-display);
-		font-size: 0.95rem;
-		font-weight: 600;
-		color: var(--ink-2);
+	.head-track {
+		position: absolute;
+		inset: 4px 0;
+		pointer-events: none;
+	}
+	.head {
+		position: absolute;
+		left: -1px;
+		top: 0;
+		bottom: 0;
+		width: 3px;
+		background: var(--accent);
+	}
+	.disabled .head {
+		display: none;
 	}
 
+	/* ---------- transport ---------- */
 	.controls {
+		display: flex;
+		align-items: flex-start;
+		gap: 16px;
+		margin: 14px 4px 0;
+		padding-top: 16px;
+		border-top: 1px solid var(--line);
+	}
+	.keys {
+		display: flex;
+		gap: 8px;
+	}
+	.slot {
 		display: grid;
-		grid-template-columns: 1fr auto 1fr;
+		justify-items: center;
+		gap: 8px;
+	}
+	.cap-label {
+		display: inline-flex;
 		align-items: center;
-		margin: 14px 0 18px;
+		gap: 4px;
+		font-size: 0.625rem;
+		color: var(--ink-3);
+		white-space: nowrap;
 	}
 	.play {
-		width: 80px;
-		height: 80px;
-		border-radius: 50%;
+		width: 88px;
+		height: 56px;
+		border-radius: var(--r-md);
 		display: grid;
 		place-items: center;
 		background: var(--accent);
 		color: var(--on-accent);
-		box-shadow:
-			var(--lip),
-			0 0 0 4px var(--die),
-			0 6px 0 4px var(--shade-2);
+		box-shadow: 0 2px 0 color-mix(in oklab, var(--accent) 55%, #000);
 		transition:
-			background-color 160ms var(--ease-out),
-			box-shadow 120ms var(--ease-out),
-			translate 120ms var(--ease-out);
+			background-color 120ms var(--ease-out),
+			translate 60ms linear,
+			box-shadow 60ms linear;
 	}
 	@media (hover: hover) {
 		.play:hover:not(:disabled) {
 			background: var(--accent-hover);
 		}
 	}
-	/* Pressed: the drop collapses and the button sinks into it. */
 	.play:active:not(:disabled) {
-		translate: 0 5px;
-		box-shadow:
-			inset 0 3px 0 rgb(110 45 0 / 0.3),
-			0 0 0 4px var(--die),
-			0 1px 0 4px var(--shade-2);
+		translate: 0 2px;
+		box-shadow: 0 0 0 color-mix(in oklab, var(--accent) 55%, #000);
 	}
 	.play:disabled {
-		opacity: 0.45;
+		opacity: 0.4;
 		cursor: not-allowed;
 	}
-	/* The triangle's visual centre sits left of its box. */
-	.glyph.is-play {
-		translate: 2px 0;
+	.sq {
+		width: 56px;
+		height: 56px;
 	}
-	.right {
-		display: flex;
-		justify-content: flex-end;
-		align-items: center;
-		gap: 8px;
+	.key.lit::after {
+		content: '';
+		position: absolute;
+		top: 6px;
+		right: 6px;
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		background: var(--led);
 	}
 
+	/* Fader: a ruled track and a rectangular cap. */
 	.vol {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		color: var(--ink-2);
-		max-width: 136px;
-	}
-	.vol :global(.vol-slider) {
-		position: relative;
 		flex: 1;
+		min-width: 0;
+		display: grid;
+		gap: 8px;
+		justify-items: start;
+	}
+	.vol :global(.fader) {
+		position: relative;
+		width: 100%;
 		display: flex;
 		align-items: center;
-		height: 32px;
+		height: 56px;
 		touch-action: none;
 		cursor: pointer;
 	}
-	.vol-rail {
+	.fader-rail {
 		position: relative;
 		flex: 1;
-		height: 8px;
-		border-radius: 99px;
-		background: var(--surface-2);
-		overflow: hidden;
+		height: 16px;
+		/* tick marks every 10%: this is a measuring scale */
+		background:
+			linear-gradient(var(--ink-3), var(--ink-3)) center / 100% 2px no-repeat,
+			repeating-linear-gradient(90deg, var(--line-2) 0 1px, transparent 1px calc(10% - 0.1px)) center / 100% 100% no-repeat;
 	}
-	.vol :global(.vol-range) {
+	.vol :global(.fader-range) {
 		position: absolute;
-		height: 100%;
-		background: var(--ink-2);
-	}
-	.vol :global(.vol-thumb) {
-		width: 18px;
-		height: 18px;
-		border-radius: 50%;
+		top: 7px;
+		height: 2px;
 		background: var(--ink);
-		border: 3px solid var(--surface);
-		box-shadow: 0 2px 0 var(--shade-2);
-		transition: scale 120ms var(--ease-out);
 	}
-	.vol :global(.vol-thumb:active) {
-		scale: 1.15;
+	.vol :global(.fader-cap) {
+		display: block;
+		width: 14px;
+		height: 28px;
+		border-radius: var(--r-sm);
+		background: var(--key);
+		box-shadow:
+			inset 0 0 0 1px var(--line-2),
+			0 1px 0 var(--key-edge);
+		cursor: grab;
+	}
+	.vol :global(.fader-cap)::after {
+		content: '';
+		position: absolute;
+		left: 3px;
+		right: 3px;
+		top: 13px;
+		height: 2px;
+		background: var(--accent);
+	}
+	.vol :global(.fader-cap:active) {
+		cursor: grabbing;
 	}
 
-	/* Phone: the art perches on the deck's corner beside the title; transport in the thumb zone. */
+	.bars {
+		margin: 4px 4px 0;
+	}
+
+	/* ---------- visualizer mode: a three-position switch with lamps ---------- */
+	.modes {
+		display: flex;
+		gap: 8px;
+		margin: 14px 4px 4px;
+		padding-top: 14px;
+		border-top: 1px solid var(--line);
+	}
+	.seg {
+		flex: 1;
+		display: grid;
+		grid-auto-flow: column;
+		grid-auto-columns: 1fr;
+		border-radius: var(--r-md);
+		box-shadow: inset 0 0 0 1px var(--line-2);
+		overflow: hidden;
+	}
+	.seg-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 7px;
+		height: 40px;
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.6875rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--ink-2);
+		transition:
+			background-color 120ms var(--ease-out),
+			color 120ms var(--ease-out);
+	}
+	.seg-btn + .seg-btn {
+		border-left: 1px solid var(--line-2);
+	}
+	.seg-btn[aria-pressed='true'] {
+		background: var(--key);
+		color: var(--ink);
+		box-shadow: inset 0 -2px 0 var(--ink);
+	}
+	@media (hover: hover) {
+		.seg-btn:not([aria-pressed='true']):hover {
+			background: var(--surface-2);
+			color: var(--ink);
+		}
+	}
+	.lean {
+		width: 40px;
+		height: 40px;
+	}
+
+	/* Phone: the screen shrinks to a thumbnail beside the title; transport in the thumb zone. */
 	@media (max-width: 560px) {
-		.stage {
-			position: absolute;
-			top: 0;
-			left: 14px;
-			width: 108px;
-			margin: 0;
+		.now {
+			display: grid;
+			grid-template-columns: 112px minmax(0, 1fr);
+			column-gap: 14px;
+			padding: 10px;
 		}
-		.stage :global(.berry) {
-			scale: 0.5;
+		.now > :global(*:not(.screen):not(.meta)) {
+			grid-column: 1 / -1;
 		}
-		.art-wrap {
-			border-radius: 16px;
-			rotate: -4deg;
-			box-shadow:
-				0 0 0 4px var(--die),
-				0 6px 0 4px var(--shade);
+		.screen {
+			grid-row: 1;
 		}
-		.air {
-			font-size: 0.8rem;
-			padding: 2px 8px 3px;
-			top: -10px;
-			left: -6px;
-		}
-		.deck {
-			margin-top: 18px;
-			padding: 14px 16px 16px;
+		.status {
+			top: 6px;
+			left: 6px;
+			padding: 3px 5px;
+			font-size: 0.5625rem;
 		}
 		.meta {
-			margin-left: 118px;
-			min-height: 92px;
-			text-align: left;
+			grid-row: 1;
+			padding: 2px 0 0;
+			min-height: 0;
 		}
 		.title {
-			font-size: 1.35rem;
-			line-height: 1.12;
+			font-size: 1.25rem;
+			-webkit-line-clamp: 3;
+			line-clamp: 3;
 		}
 		.by {
-			justify-content: flex-start;
-			font-size: 0.82rem;
-			margin-top: 6px;
+			flex-wrap: wrap;
+			gap: 6px;
+			margin-top: 8px;
+			font-size: 0.8125rem;
 		}
-		.progress {
-			margin-top: 6px;
+		.readout {
+			margin-top: 12px;
 		}
-		.times {
-			margin-bottom: 14px;
+		.elapsed {
+			font-size: 1.75rem;
 		}
 		.vol {
-			visibility: hidden; /* phones have hardware volume; keep the grid column */
+			display: none; /* phones have hardware volume */
 		}
 		.controls {
 			position: fixed;
@@ -565,14 +653,40 @@
 			left: 0;
 			right: 0;
 			bottom: 0;
+			justify-content: center;
 			margin: 0;
-			padding: 12px 20px max(12px, env(safe-area-inset-bottom));
+			padding: 10px 16px max(10px, env(safe-area-inset-bottom));
 			background: var(--surface);
-			box-shadow: 0 -4px 0 var(--die);
+			border-top: 1px solid var(--line);
 		}
-		.play {
-			width: 64px;
-			height: 64px;
+		.keys {
+			width: 100%;
+			max-width: 420px;
+			display: grid;
+			grid-template-columns: 1fr 1fr 1fr;
+			gap: 8px;
+		}
+		/* lyrics | play | skip, wherever lyrics exist */
+		.keys .slot {
+			grid-row: 1;
+			justify-items: stretch;
+		}
+		.keys .slot:first-child {
+			grid-column: 2;
+		}
+		.keys .slot:nth-child(2) {
+			grid-column: 3;
+		}
+		.keys .slot:nth-child(3) {
+			grid-column: 1;
+		}
+		.play,
+		.sq,
+		.keys :global(.hold) {
+			width: 100%;
+		}
+		.cap-label {
+			display: none;
 		}
 	}
 </style>
