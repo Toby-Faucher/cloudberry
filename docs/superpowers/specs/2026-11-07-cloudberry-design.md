@@ -489,3 +489,30 @@ Engineering:
   (sticker plate behind text if needed).
 - Budget: each shader ≤ ~4 ms GPU at 1080p×0.5 on integrated graphics; pause when hidden;
   `prefers-reduced-motion` → a single static frame per track, no animation; no WebGL2 → current CSS fallback.
+
+---
+
+# Phase 6: hardware redesign (added 2026-11-07; supersedes the *look* of Phases 3–4)
+Toby on the Phase 4 result: "That UI looks horrible, make it still more modern and make it look good, it
+looks like Animal Crossing." He chose **Hardware / TE-style**: inspired by Teenage Engineering and Nothing.
+
+## Direction
+- Precise grid, light grey / off-white + graphite in light mode; graphite / near-black in dark mode. ONE hot
+  cloudberry orange accent (berry family, may run hotter for small LED-like accents). No bog green, no
+  cream, no sticker outlines, no hard offset cartoon shadows, no tilted covers, no drawn stickers, no
+  Fredoka. The berry logo mark stays as the brand mark only (header + favicon), small.
+- Type: a crisp grotesk for UI + a mono for labels, numbers, times, counters (tabular figures). Avoid Inter
+  and Geist (listed AI defaults); self-host via @fontsource.
+- Instrument language: 1px rules, labelled sections like a device panel (small mono caps labels are fine
+  HERE because they're functional panel labels, but don't put an eyebrow on everything), numbered queue rows
+  (01, 02…), LED dots for state (on-air, sync, listeners), dot-matrix or segmented readouts for time/sync,
+  controls that feel physical (big transport keys, a fader for volume, a rotary/segmented control for
+  visualizer mode). Asymmetric, dense-but-calm grid; generous negative space where it counts.
+- Album art stays square, crisp, untilted; it's the one image on the panel.
+- Reactions: small monochrome pictogram keys (custom SVG, consistent stroke), not emoji, not stickers;
+  orange flash on press. Float-up becomes a precise, quick rise + fade (still smeared).
+- Chat: device-log aesthetic: mono timestamps, compact rows, own messages marked with an orange tick
+  rather than bubbles; keep the send/pending/receive motion from Phase 4 but make it snappy and mechanical.
+- Motion: keep anime.js + WASM smear but tune to "mechanical": short, snappy, eased like switches and
+  meters (counters roll, LEDs blink, keys depress), never bouncy-cute.
+- Keep every feature/behaviour from Phases 2–5 and the playlist work; this is a visual redesign.
