@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Mode } from './state.svelte.ts';
 	import Halo from './Halo.svelte';
-	import Bloom from './Bloom.svelte';
+	import ShaderCanvas from './ShaderCanvas.svelte';
 	import Bars from './Bars.svelte';
 
 	/**
@@ -14,7 +14,7 @@
 {#if mode === 'halo'}
 	<Halo />
 {:else if mode === 'bloom'}
-	<Bloom variant="aura" />
+	<ShaderCanvas variant="aura" />
 {:else}
 	<Bars />
 {/if}

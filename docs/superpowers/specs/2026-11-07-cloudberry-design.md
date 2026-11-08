@@ -464,31 +464,52 @@ motion on the chat stuff like sending". Research: `docs/research-ai-ui-tells.md`
 # Phase 5: lean-back shader pack (added 2026-11-07; Toby: "I really like the full screen mode. Can u make
 # it so there is more shaders there?")
 
-Lean-back gets a set of full-screen WebGL2 shaders, all in the flat sticker/game look (posterized bands,
-hard edges, white die-cut outlines where shapes exist, cloudberry amber + bog/leaf greens + `--track-tint`;
-never smudgy glow):
-1. **Bloom**: the existing one.
-2. **Bog**: layered flat parallax hills/moss silhouettes swaying with bass, cloudberries bobbing on stems,
-   fireflies that pop on `beat`.
-3. **Aurora**: arctic aurora ribbons in 3–4 posterized bands driven by mids/treble; stars twinkle on beats.
-4. **Drupelets**: SDF metaball berry cluster that wobbles with bass and squishes/splits on beats; toon-shaded
-   with a white outline and one flat highlight (like the logo).
-5. **Tunnel**: flat concentric rings rushing toward the viewer, ring thickness from the 64 bars, speed from energy.
-6. **Halftone**: comic-print dot grid whose dot sizes follow the spectrum radially, kaleidoscope symmetry,
-   colour flips on beats.
+Lean-back gets a set of full-screen WebGL2 shaders. Direction changed mid-build (Toby: the cartoon/sticker
+look "looks like Animal Crossing"; the app moves to a hardware / Teenage Engineering + Nothing look), so the
+pack is instrument-like: off-white paper + graphite ink (dark: near-black graphite + off-white), ONE cloudberry
+orange (`--track-tint` only nudges it), hairlines, dot-matrix/LED grids, posterized flat fills, hard
+anti-aliased edges (smoothstep over ~1 px, `fwidth` isolines), never blur, never sticker outlines:
+1. **Bloom**: domain-warped field drawn as a contour map: hairline isolines, highest ground filled orange;
+   bass → warp, energy/beat → the orange rises, treble → "+" markers light on a fixed grid. Its `aura` variant
+   (behind the now-playing art) is a disc of the same map ringed by one hairline; on phones the canvas box is
+   200% so it reads as a shape, not a smudge.
+2. **Scope**: oscilloscope bench: ruled graticule with dotted centre axes, the waveform traced across the
+   screen with phosphor persistence as three stepped echo traces, a boxed Lissajous figure, a 64-column LED
+   spectrum meter along the bottom, a TRIG LED on beats. (Replaces the planned cartoon "Bog".)
+3. **Aurora**: plotter line art: three ribbons, each a bundle of ruled hairlines (lowest three orange) cut by
+   treble-flickered vertical rays; mids lift/bend them; a dot-grid sky flashes orange on beats; ruled horizon
+   whose ticks rise with the bars.
+4. **Drupelets**: 19-sphere hex cluster, each a hairline outline filled with a dot matrix whose dot size is
+   posterised Lambert light (lit dots orange, the rest graphite); radius per sphere from a spectrum band,
+   bass wobble, beats squash the cluster and push spheres apart.
+5. **Tunnel**: wireframe tube: hairline-outlined rings + radial spokes rushing out from behind the art, every
+   4th ring solid orange; ring thickness from the 64 bars, speed from energy, beats lurch it forward.
+6. **Halftone**: offset-print kaleidoscope: two misregistered dot screens (orange + graphite) whose dot sizes
+   fold into six mirrored wedges following the spectrum outward; a dial of spectrum ticks rings the art; beats
+   flip which screen prints orange (every 4th inverts paper/ink).
+Layouts anchor to the viewport's half extents so on a phone the busy parts sit above/below the art.
 
-Engineering:
-- One shared WebGL2 runner: fullscreen triangle, render at ~0.5× resolution then upscale (or 0.75× if a
-  shader looks too soft), shared uniforms `u_time, u_res, u_bass, u_mid, u_treble, u_energy, u_beat,
-  u_tint, u_accent` plus a 64×1 float texture of bars and a 256×1 texture of waveform. Each shader is
-  its own `.glsl`/`.ts` module; compile lazily on first use; crossfade 400 ms when switching.
-- Picker in lean-back: chunky game-tab row along the bottom, auto-hides with the rest of the lean-back
-  chrome after ~2.5 s idle, reappears on mouse move/tap. Keys: `←/→` previous/next shader, `A` toggles
-  auto-cycle (next shader on each track change). Choice saved in localStorage (try/catch).
-- Track title, artist chip and lyrics in lean-back always render ABOVE the shader with enough contrast
-  (sticker plate behind text if needed).
-- Budget: each shader ≤ ~4 ms GPU at 1080p×0.5 on integrated graphics; pause when hidden;
-  `prefers-reduced-motion` → a single static frame per track, no animation; no WebGL2 → current CSS fallback.
+Engineering (as built, `web/src/lib/visualizer/`):
+- `runner.ts`: one WebGL2 context, fullscreen triangle, per-shader resolution (`scale`, default 0.75×, 0.6× for
+  Drupelets; DPR capped at 2), shared uniforms `u_time, u_res, u_bass, u_mid, u_treble, u_energy, u_beat,
+  u_beats (onset count), u_dark, u_aura, u_tint, u_accent, u_bg` + a 64×1 R16F bars texture and a 256×1 R16F
+  waveform texture, programs compiled lazily on first use, 400 ms crossfade (constant-alpha blend) on switch.
+  `pack()` eases the analysis values and advances music-driven time (unit tested).
+- `shaders/*.ts`: one module per shader (`{id, label, scale, frag}`) after a shared GLSL `PRELUDE`
+  (`shaders/common.ts`: palette, `fill/stroke/aastep/isolines`, noise). `ShaderCanvas.svelte` hosts any of
+  them (lean-back `fill`, now-playing `aura`) and keeps the CSS fallback for no WebGL2.
+- Picker (`ShaderPicker.svelte`): an instrument key strip along the bottom (hairline-ruled keys, mono
+  small-caps labels, orange LED on the active one; icon-only on phones), hides with the rest of the lean-back
+  chrome after ~2.5 s idle, back on pointer move/tap; stays while keyboard focus is in it. Keys: `←/→`
+  previous/next shader, `A` toggles auto-cycle (next shader on each track change); both wake the chrome and
+  are listed in the `?` dialog. Shader + auto saved in localStorage (`cloudberry.leanShader`,
+  `cloudberry.leanAuto`, try/catch).
+- Lean-back chrome is an instrument display with self-contained `--lb-*` tokens (the shell's token names may
+  change): readout plates (paper, 1px rule, mono "NOW PLAYING" label with orange LED) always above the shader;
+  art in a 1px frame, no tilt; short mechanical enter motion.
+- Budget: ≤ ~4 ms GPU at 1080p on integrated graphics; pause when hidden (the shared loop halts);
+  `prefers-reduced-motion` → one static frame per track (stable per-track time), no animation;
+  no WebGL2 → current CSS fallback.
 
 ---
 
