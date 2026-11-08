@@ -21,10 +21,13 @@ export function store(key: string, v: boolean) {
 }
 
 export const WIDE_QUERY = '(min-width: 1180px)';
+export const PHONE_QUERY = '(max-width: 560px)';
 
 export const ui = $state({
 	/** Wide enough for the docked side chat (else it is a drawer). */
 	wide: typeof matchMedia !== 'undefined' && matchMedia(WIDE_QUERY).matches,
+	/** Phone width (compact now-playing, bottom transport). */
+	phone: typeof matchMedia !== 'undefined' && matchMedia(PHONE_QUERY).matches,
 	/** Docked chat panel open (wide screens; remembered). */
 	dock: stored('cloudberry.chat', true),
 	/** Chat drawer open (narrow screens; transient). */
@@ -37,7 +40,9 @@ export const ui = $state({
 	/** Synced lyrics for the current track, null when none (also for lean-back mode). */
 	lines: null as LrcLine[] | null,
 	/** Highest chat message id the user has had on screen. */
-	seenId: 0
+	seenId: 0,
+	/** DJ of the day (crown on their avatar everywhere), from station state. */
+	dj: null as string | null
 });
 
 export const chatVisible = () => (ui.wide ? ui.dock : ui.drawer);

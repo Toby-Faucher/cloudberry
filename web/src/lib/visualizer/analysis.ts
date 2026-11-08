@@ -190,7 +190,7 @@ export const reducedMotion =
 	typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 /** Under reduced motion we only take a still snapshot this often (no animation in between). */
 const SNAPSHOT_S = 6;
-const BRAND: Rgb = [249, 115, 22];
+const BRAND: Rgb = [240, 145, 43]; // --berry-500
 
 const frame: Frame = {
 	bars: new Float32Array(BARS),
@@ -231,7 +231,7 @@ export function cssColor(css: string, fallback: Rgb = BRAND): Rgb {
 function readTint(): Rgb {
 	if (!probe) {
 		probe = document.createElement('i');
-		probe.style.cssText = 'position:absolute;width:0;height:0;color:var(--track-tint, #f97316)';
+		probe.style.cssText = 'position:absolute;width:0;height:0;color:var(--track-tint, #f0912b)';
 		probe.setAttribute('aria-hidden', 'true');
 		document.body.append(probe);
 	}

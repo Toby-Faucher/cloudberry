@@ -286,6 +286,14 @@ actions, strong states (hover/press/disabled/active are unmistakable), chunky hi
 buttons, clear counters, every action gives immediate feedback (press squash, ripple, toast). Never
 cluttered: one focal point (now playing), everything else secondary. Readability first.
 
+## Visual language: flat sticker, not soft-glow SaaS (Toby, later the same day)
+"There is a lot of AI-looking UI … clean it up." Reference: a flat vector sticker logo (simple shapes,
+2–3 flat tones each, one white highlight, thick white die-cut outline, chunky rounded lowercase
+wordmark). So: Fredoka (self-hosted) for display/HUD, Inter for text; flat fills, hard-stop tones,
+a white die-cut outline (`--die-cut`) + game-button lip (`--lip`) on the things you press; no blur
+glows, no glass, no ambient backdrop (the `<Backdrop/>` app background is removed), no idle motion.
+Visualizer glows become crisp shapes (Bloom is posterised; Halo/now-playing glow is a flat disc).
+
 ## Motion: anime.js v4 everywhere (`animejs`, MIT)
 `import { animate, createTimeline, stagger, spring, utils } from 'animejs'`. Central helpers in
 `web/src/lib/motion/` (e.g. `motion.ts`) with a `reduced` flag from `prefers-reduced-motion`

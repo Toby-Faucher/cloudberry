@@ -75,13 +75,10 @@
 		align-items: center;
 		gap: 2px;
 	}
-	.tools :global(.icon-btn.on) {
-		color: var(--accent-ink);
-	}
 	.tools :global(.chat-btn) {
 		position: relative;
-		width: 36px;
-		height: 36px;
+		width: 40px;
+		height: 40px;
 	}
 	.badge {
 		position: absolute;

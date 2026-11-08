@@ -23,30 +23,24 @@
 	.bar {
 		display: flex;
 		justify-content: center;
-		gap: 2px;
-		margin: -6px 0 18px;
+		gap: 4px;
+		margin: -4px 0 18px;
 	}
 	.r {
-		width: 40px;
-		height: 36px;
-		border-radius: 12px;
-		font-size: 1.15rem;
+		width: 46px;
+		height: 46px;
+		border-radius: 14px;
+		font-size: 1.35rem;
 		line-height: 1;
-		filter: saturate(0.85);
+		background: var(--surface-2);
 		transition:
 			background-color 160ms var(--ease-out),
-			transform 140ms var(--ease-out),
-			filter 160ms;
+			translate 140ms var(--ease-out);
 	}
 	@media (hover: hover) {
 		.r:hover {
-			background: var(--surface-2);
-			filter: none;
-			transform: translateY(-2px);
+			background: var(--accent-soft);
+			translate: 0 -3px;
 		}
-	}
-	.r:active {
-		transform: scale(0.88);
-		transition-duration: 80ms;
 	}
 </style>

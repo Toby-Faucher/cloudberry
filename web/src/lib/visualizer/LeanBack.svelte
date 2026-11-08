@@ -10,6 +10,15 @@
 	import Bloom from './Bloom.svelte';
 	import { follow, frames, reducedMotion } from './analysis.ts';
 	import { setLean, viz } from './state.svelte.ts';
+	import { motion, smearAnimate } from '#lib/motion/motion.ts';
+
+	/** Enter: the art flies up out of the dark (smeared), the words land after it. */
+	function arrive(el: HTMLElement) {
+		smearAnimate(el.querySelector<HTMLElement>('.art'), { y: [260, 0], scale: [0.6, 1], rotate: [-6, 0], opacity: [0, 1], duration: 720, ease: 'outBack(1.3)' });
+		el.querySelectorAll<HTMLElement>('.meta, .lyric').forEach((m, i) =>
+			motion(m, { y: [40, 0], opacity: [0, 1], duration: 600, delay: 220 + i * 90 })
+		);
+	}
 
 	/** Fullscreen "lean-back" view: big art, title and the current lyric line over Bloom. */
 	let { station }: { station: Station } = $props();
@@ -99,14 +108,14 @@
 		<Bloom variant="fill" scale={0.5} />
 		<div class="vignette" aria-hidden="true"></div>
 
-		<div class="content">
+		<div class="content" use:arrive>
 			<div class="art" bind:this={artEl}>
 				{#key cur?.queue_id}
 					<div class="art-in" in:fade={{ duration: dur(500) }}>
 						{#if cur}
 							<Art track={cur.track} size="100%" />
 						{:else}
-							<div class="idle-art"><Berry bead={56} opacity={0.35} /></div>
+							<div class="idle-art"><Berry bead={56} opacity={0.5} /></div>
 						{/if}
 					</div>
 				{/key}
@@ -227,14 +236,10 @@
 		place-items: center;
 		border-radius: 50%;
 		color: var(--ink);
-		background: color-mix(in oklab, var(--surface) 55%, transparent);
-		backdrop-filter: blur(12px);
+		background: var(--surface);
 		transition:
 			opacity 400ms ease,
 			transform 120ms var(--ease-out);
-	}
-	.exit:active {
-		transform: scale(0.94);
 	}
 	.idle .exit {
 		opacity: 0;

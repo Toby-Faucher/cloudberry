@@ -42,10 +42,10 @@ export function isTyping(t: EventTarget | null): boolean {
 	return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName ?? ''));
 }
 
-const BRAND = [249, 115, 22]; // #F97316
+const BRAND = [240, 145, 43]; // --berry-500 #F0912B
 
 /**
- * Per-track tint: the artwork's average colour pulled halfway toward brand orange,
+ * Per-track tint: the artwork's average colour pulled halfway toward brand berry,
  * then held to a saturation/lightness band so it never goes muddy, grey or neon and
  * reads on both themes. Returns a CSS rgb() string.
  */

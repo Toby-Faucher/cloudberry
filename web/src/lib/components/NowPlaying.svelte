@@ -4,7 +4,7 @@
 	import type { Station } from '#lib/station.svelte.ts';
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
-	import { MicVocal, Pause, Play, SkipForward, Volume2 } from '@lucide/svelte';
+	import { MicVocal, Pause, Play, Volume2 } from '@lucide/svelte';
 	import { store, ui } from '#lib/ui.svelte.ts';
 	import Avatar from './Avatar.svelte';
 	import Lyrics from './Lyrics.svelte';
@@ -12,6 +12,9 @@
 	import ReactionFloats from './ReactionFloats.svelte';
 	import { ModeSwitch, Visualizer, startAnalysis, stopAnalysis, viz } from '#lib/visualizer/index.ts';
 	import Berry from './Berry.svelte';
+	import HoldSkip from './HoldSkip.svelte';
+	import ComboMeter from './ComboMeter.svelte';
+	import { smearAnimate } from '#lib/motion/motion.ts';
 
 	let { station }: { station: Station } = $props();
 
@@ -61,13 +64,26 @@
 		station.send({ type: 'seek', position_ms: Math.min(durationMs - 1000, Math.max(0, shown + d)) });
 	}
 
+	// Art swap: the new cover flings in from the right with smear (not on first paint).
+	let ready = false;
+	onMount(() => (ready = true));
+	function artIn(el: HTMLElement) {
+		if (ready) smearAnimate(el, { x: [140, 0], rotate: [9, 0], scale: [0.86, 1], opacity: [0, 1], duration: 620, delay: 90 });
+	}
+	function artOut(node: Element) {
+		return {
+			duration: dur(240),
+			css: (t: number) => `opacity:${t};translate:${(t - 1) * 90}px 0;rotate:${(t - 1) * 6}deg`
+		};
+	}
+
 	function trackIn(node: Element) {
 		return {
 			duration: dur(520),
 			delay: dur(80),
 			css: (t: number) => {
 				const e = 1 - Math.pow(1 - t, 4);
-				return `opacity:${e};transform:translateY(${(1 - e) * 14}px) scale(${0.97 + 0.03 * e});filter:blur(${(1 - e) * 6}px)`;
+				return `opacity:${e};transform:translateY(${(1 - e) * 14}px) scale(${0.97 + 0.03 * e})`;
 			}
 		};
 	}
@@ -85,26 +101,29 @@
 		{#if viz.mode !== 'bars'}<Visualizer mode={viz.mode} />{/if}
 		<div class="stack">
 			{#key cur?.queue_id}
-				<div class="art-wrap" in:trackIn out:trackOut>
-					{#if cur}
-						<Art track={cur.track} size="100%" />
-					{:else}
-						<div class="idle-art"><Berry bead={44} opacity={0.3} /></div>
-					{/if}
+				<div class="swap" use:artIn out:artOut>
+					<div class="art-wrap">
+						{#if cur}
+							<Art track={cur.track} size="100%" />
+						{:else}
+							<div class="idle-art"><Berry bead={44} opacity={0.5} /></div>
+						{/if}
+					</div>
 				</div>
 			{/key}
 		</div>
 		<ReactionFloats {station} />
+		<ComboMeter {station} />
 	</div>
 
 	<div class="stack meta">
 		{#key cur?.queue_id}
 			<div in:trackIn out:trackOut>
 				{#if cur}
-					<h1 class="title" title={cur.track.title}>{cur.track.title}</h1>
-					<p class="by"><Avatar name={cur.added_by} size={18} /> added by {cur.added_by}</p>
+					<h1 class="title" id="np-title" title={cur.track.title}>{cur.track.title}</h1>
+					<p class="by">added by <span class="who"><Avatar name={cur.added_by} size={22} />{cur.added_by}</span></p>
 				{:else}
-					<h1 class="title">The air is quiet</h1>
+					<h1 class="title" id="np-title">The air is quiet</h1>
 					<p class="by">
 						{s?.queue.length ? 'Press play to start the next track.' : 'Paste a YouTube link to put something on.'}
 					</p>
@@ -150,8 +169,8 @@
 			disabled={!cur && !s?.queue.length}
 			onclick={() => station.togglePlay()}
 		>
-			{#if s?.playing}<Pause size={26} fill="currentColor" strokeWidth={0} />{:else}<Play
-					size={26}
+			{#if s?.playing}<Pause size={30} fill="currentColor" strokeWidth={0} />{:else}<Play
+					size={30}
 					fill="currentColor"
 					strokeWidth={0}
 					class="play-glyph"
@@ -171,15 +190,7 @@
 					<MicVocal size={18} />
 				</button>
 			{/if}
-			<button
-				class="icon-btn skip"
-				aria-label="Skip for everyone"
-				title="Skip"
-				disabled={!cur}
-				onclick={() => station.skip()}
-			>
-				<SkipForward size={20} fill="currentColor" />
-			</button>
+			<HoldSkip {station} disabled={!cur} />
 		</div>
 	</div>
 
@@ -200,22 +211,25 @@
 	.stage {
 		position: relative;
 		width: min(100%, 340px);
-		margin: 8px auto 28px;
+		margin: 8px auto 24px;
 	}
+	/* A flat tinted disc behind the art that swells with the music: a shape, not a glow. */
 	.glow {
 		position: absolute;
-		inset: -24%;
+		inset: -9%;
 		border-radius: 50%;
-		background: radial-gradient(closest-side, var(--track-tint), transparent);
-		filter: blur(40px);
-		opacity: calc(0.3 + var(--energy) * 1.4);
-		transform: scale(calc(0.8 + var(--energy) * 0.6));
-		will-change: transform, opacity;
+		background: var(--track-tint);
+		opacity: 0.28;
+		transform: scale(calc(0.9 + var(--energy) * 0.35));
+		will-change: transform;
 		pointer-events: none;
 	}
+	.halo .glow {
+		display: none; /* Halo draws its own disc */
+	}
 	.glow:not(.on) {
-		opacity: 0.14;
-		transform: scale(0.85);
+		opacity: 0.16;
+		transform: scale(0.9);
 		transition:
 			opacity 1.2s var(--ease-out),
 			transform 1.2s var(--ease-out);
@@ -248,7 +262,8 @@
 		aspect-ratio: 1;
 		border-radius: 22px;
 		overflow: hidden;
-		box-shadow: 0 24px 48px -24px rgb(120 50 0 / 0.45);
+		/* Sticker: die-cut outline + a small drop. */
+		box-shadow: var(--die-cut), var(--shadow-pop);
 	}
 	.art-wrap :global(.art) {
 		border-radius: 0;
@@ -263,28 +278,43 @@
 	}
 	.meta {
 		text-align: center;
-		min-height: 4.6rem;
+		min-height: 6.4rem;
 	}
+	/* The one focal point: display-size, confident. */
 	.title {
-		font-size: clamp(1.3rem, 1.1rem + 0.8vw, 1.65rem);
-		line-height: 1.2;
+		font-size: clamp(1.9rem, 1.3rem + 1.4vw, 2.6rem);
+		font-weight: 700;
+		line-height: 1.06;
+		letter-spacing: -0.03em;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		text-wrap: balance;
+		padding-bottom: 0.06em; /* descenders under line-clamp */
 	}
 	.by {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 6px;
-		margin: 6px 0 0;
+		gap: 8px;
+		margin: 10px 0 0;
 		color: var(--ink-2);
 		font-size: 0.9rem;
 	}
+	.who {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 3px 12px 3px 3px;
+		border-radius: 999px;
+		background: var(--surface-2);
+		color: var(--ink);
+		font-weight: 600;
+	}
 
+	/* Progress: raw rAF scaleX, never eased (sync is sacred). */
 	.progress {
 		margin-top: 18px;
 		padding: 10px 0;
@@ -294,7 +324,7 @@
 		cursor: default;
 	}
 	.rail {
-		height: 5px;
+		height: 6px;
 		border-radius: 99px;
 		background: var(--surface-2);
 		overflow: hidden;
@@ -302,72 +332,71 @@
 	}
 	@media (hover: hover) {
 		.progress:not(.disabled):hover .rail {
-			height: 8px;
+			height: 10px;
 		}
 	}
 	.fill {
 		height: 100%;
-		background: var(--accent);
+		background: var(--accent-line);
 		transform-origin: left;
 		border-radius: inherit;
 	}
 	.times {
 		display: flex;
 		justify-content: space-between;
-		font-size: 0.78rem;
-		color: var(--ink-3);
+		font-size: 0.86rem;
+		font-weight: 600;
+		color: var(--ink-2);
 	}
 
 	.controls {
 		display: grid;
 		grid-template-columns: 1fr auto 1fr;
 		align-items: center;
-		margin: 14px 0 22px;
+		margin: 16px 0 20px;
 	}
 	.play {
-		width: 64px;
-		height: 64px;
+		width: 76px;
+		height: 76px;
 		border-radius: 50%;
 		display: grid;
 		place-items: center;
 		background: var(--accent);
 		color: var(--on-accent);
-		box-shadow: 0 10px 24px -10px var(--accent);
+		box-shadow: var(--lip), var(--die-cut), var(--shadow);
 		transition:
-			transform 140ms var(--ease-out),
+			background-color 160ms var(--ease-out),
 			box-shadow 200ms var(--ease-out);
 	}
+	@media (hover: hover) {
+		.play:hover:not(:disabled) {
+			background: var(--accent-hover);
+		}
+	}
 	.play:active:not(:disabled) {
-		transform: scale(0.94);
+		box-shadow: inset 0 3px 0 rgb(110 45 0 / 0.3), var(--die-cut);
 	}
 	.play:disabled {
-		opacity: 0.35;
-		cursor: default;
+		opacity: 0.4;
+		cursor: not-allowed;
 		box-shadow: none;
 	}
 	.right {
 		display: flex;
 		justify-content: flex-end;
 		align-items: center;
-		gap: 2px;
-	}
-	.right .on {
-		color: var(--accent-ink);
+		gap: 8px;
 	}
 	/* The triangle's visual centre sits left of its box. */
 	.play :global(.play-glyph) {
 		translate: 2px 0;
-	}
-	.skip {
-		width: 44px;
-		height: 44px;
 	}
 
 	.vol {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		color: var(--ink-3);
+		color: var(--ink-2);
 		max-width: 130px;
 	}
 	.vol :global(.vol-slider) {
@@ -375,14 +404,14 @@
 		flex: 1;
 		display: flex;
 		align-items: center;
-		height: 24px;
+		height: 32px;
 		touch-action: none;
 		cursor: pointer;
 	}
 	.vol-rail {
 		position: relative;
 		flex: 1;
-		height: 4px;
+		height: 5px;
 		border-radius: 99px;
 		background: var(--surface-2);
 		overflow: hidden;
@@ -390,24 +419,78 @@
 	.vol :global(.vol-range) {
 		position: absolute;
 		height: 100%;
-		background: var(--ink-3);
+		background: var(--ink-2);
 	}
 	.vol :global(.vol-thumb) {
-		width: 14px;
-		height: 14px;
+		width: 16px;
+		height: 16px;
 		border-radius: 50%;
-		background: var(--surface);
-		border: 1px solid var(--line);
-		box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
-		transition: transform 120ms var(--ease-out);
+		background: var(--ink);
+		border: 3px solid var(--surface);
+		box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+		transition: scale 120ms var(--ease-out);
 	}
 	.vol :global(.vol-thumb:active) {
-		transform: scale(1.15);
+		scale: 1.15;
 	}
 
-	@media (max-width: 480px) {
+	/* Phone: compact now-playing (art beside the title) and the transport in the thumb zone. */
+	@media (max-width: 560px) {
 		.now {
-			padding: 20px;
+			padding: 16px;
+			display: grid;
+			grid-template-columns: 96px minmax(0, 1fr);
+			column-gap: 16px;
+			align-items: center;
+		}
+		.now > :global(*) {
+			grid-column: 1 / -1;
+		}
+		.stage {
+			grid-column: 1;
+			width: 96px;
+			margin: 0;
+		}
+		.stage :global(.berry) {
+			scale: 0.5;
+		}
+		.meta {
+			grid-column: 2;
+			text-align: left;
+			min-height: 0;
+		}
+		.title {
+			font-size: 1.35rem;
+			line-height: 1.12;
+		}
+		.by {
+			justify-content: flex-start;
+			font-size: 0.82rem;
+			margin-top: 6px;
+		}
+		.progress {
+			margin-top: 10px;
+		}
+		.times {
+			margin-bottom: 16px;
+		}
+		.vol {
+			visibility: hidden; /* phones have hardware volume; keep the grid column */
+		}
+		.controls {
+			position: fixed;
+			z-index: 40;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			margin: 0;
+			padding: 10px 20px max(10px, env(safe-area-inset-bottom));
+			background: var(--surface);
+			border-top: 3px solid var(--line);
+		}
+		.play {
+			width: 64px;
+			height: 64px;
 		}
 	}
 </style>

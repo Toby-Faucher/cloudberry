@@ -74,7 +74,7 @@ describe('isYouTubeUrl', () => {
 describe('trackTint', () => {
 	it('keeps brand orange orange and lifts greys into a usable tint', () => {
 		const rgb = (s: string) => s.match(/\d+/g)!.map(Number);
-		rgb(trackTint([249, 115, 22])).forEach((v, i) => expect(Math.abs(v - [249, 115, 22][i])).toBeLessThan(8));
+		rgb(trackTint([240, 145, 43])).forEach((v, i) => expect(Math.abs(v - [240, 145, 43][i])).toBeLessThan(8));
 		const grey = trackTint([128, 128, 128]);
 		const [r, g, b] = grey.match(/\d+/g)!.map(Number);
 		expect(r).toBeGreaterThan(b + 80); // saturated, warm

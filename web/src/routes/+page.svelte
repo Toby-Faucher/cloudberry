@@ -15,8 +15,31 @@
 	import Toast from '#lib/components/Toast.svelte';
 	import Shortcuts from '#lib/components/Shortcuts.svelte';
 	import Integrations from '#lib/components/Integrations.svelte';
-	import { ui } from '#lib/ui.svelte.ts';
-	import { Backdrop, LeanBack } from '#lib/visualizer/index.ts';
+	import { PHONE_QUERY, ui } from '#lib/ui.svelte.ts';
+	import { LeanBack } from '#lib/visualizer/index.ts';
+	import Hud from '#lib/components/Hud.svelte';
+	import TitleCard from '#lib/components/TitleCard.svelte';
+	import { installPress, motion } from '#lib/motion/motion.ts';
+	import { Pencil } from '@lucide/svelte';
+	import { onMount } from 'svelte';
+
+	onMount(() => {
+		const phone = matchMedia(PHONE_QUERY);
+		const onPhone = () => (ui.phone = phone.matches);
+		phone.addEventListener('change', onPhone);
+		const uninstall = installPress();
+		return () => {
+			phone.removeEventListener('change', onPhone);
+			uninstall();
+		};
+	});
+
+	/** Tune-in → app: the HUD drops in, then the card, then the lists, staggered. */
+	function entrance(root: HTMLElement) {
+		root.querySelectorAll<HTMLElement>('[data-enter]').forEach((el, i) =>
+			motion(el, { y: [28, 0], scale: [0.97, 1], opacity: [0, 1], duration: 700, delay: 60 + i * 70 })
+		);
+	}
 
 	const NAME_KEY = 'cloudberry.name';
 	let name = $state(localStorage.getItem(NAME_KEY) ?? '');
@@ -46,12 +69,11 @@
 		name = '';
 	}
 
-	const statusLabel = { connecting: 'Connecting', live: 'Live', reconnecting: 'Reconnecting' };
 </script>
 
 {#if !station}
 	<main class="gate">
-		<Berry />
+		<Berry bead={34} />
 		<h1 class="wordmark">cloudberry</h1>
 
 		{#if !name}
@@ -76,34 +98,33 @@
 		{/if}
 	</main>
 {:else}
-	<Backdrop />
 	<LeanBack {station} />
 	<div class="shell" class:docked={ui.wide && ui.dock} in:fade={{ duration: dur(400) }}>
-		<div class="app">
+		<div class="app" use:entrance>
 			<header>
-				<div class="brand">
-					<span class="dot" aria-hidden="true"></span>
+				<div class="brand" data-enter>
+					<Berry bead={10} />
 					<span class="wordmark small">cloudberry</span>
 				</div>
-				<div class="head-right">
-					<Listeners {station} />
+				<div class="hud-slot" data-enter><Hud {station} /></div>
+				<div class="head-right" data-enter>
+					<Listeners {station} max={ui.wide ? 6 : ui.phone ? 2 : 4} />
 					<HeaderTools {station} />
-					<span class="status {station.status}" role="status" title="Connection: {statusLabel[station.status]}">
-						<span class="pip"></span><span class="status-text">{statusLabel[station.status]}</span>
-					</span>
-					<button class="link" onclick={changeName}>{name}</button>
+					<button class="me-btn" onclick={changeName} aria-label="You are {name}. Change name">
+						<span class="me-name">{name}</span><Pencil size={14} />
+					</button>
 				</div>
 			</header>
 
 			<main class="grid">
-				<div class="left">
+				<div class="left" data-enter>
 					<NowPlaying {station} />
 				</div>
 				<div class="right">
-					<AddLink {station} />
-					<Queue {station} />
-					<History {station} />
-					<Library {station} />
+					<div data-enter><AddLink {station} /></div>
+					<div data-enter><Queue {station} /></div>
+					<div data-enter><History {station} /></div>
+					<div data-enter><Library {station} /></div>
 				</div>
 			</main>
 		</div>
@@ -111,8 +132,10 @@
 		<Toast {station} />
 		<Shortcuts {station} />
 		<Integrations {station} />
+		<TitleCard {station} />
 	</div>
 {/if}
+<canvas class="rain" id="berry-rain" aria-hidden="true"></canvas>
 
 <style>
 	/* ---------- gate ---------- */
@@ -128,13 +151,13 @@
 	.wordmark {
 		font-family: var(--font-display);
 		font-weight: 700;
-		font-size: clamp(2.6rem, 2rem + 3vw, 4rem);
-		letter-spacing: -0.045em;
+		font-size: clamp(3rem, 2.2rem + 3.6vw, 4.8rem);
+		letter-spacing: -0.02em;
 		line-height: 1;
 	}
 	.wordmark.small {
-		font-size: 1.35rem;
-		letter-spacing: -0.035em;
+		font-size: 1.6rem;
+		letter-spacing: -0.015em;
 	}
 
 	.name-form {
@@ -167,19 +190,22 @@
 		outline: none;
 	}
 	.field button {
-		padding: 0 16px;
+		padding: 0 18px;
+		min-height: 44px;
 		border-radius: 12px;
 		background: var(--accent);
 		color: var(--on-accent);
-		font-weight: 600;
-		transition: opacity 160ms, transform 120ms var(--ease-out);
+		font-weight: 650;
+		transition:
+			opacity 160ms,
+			background-color 160ms var(--ease-out);
+	}
+	.field button:hover:not(:disabled) {
+		background: var(--accent-hover);
 	}
 	.field button:disabled {
-		opacity: 0.35;
-		cursor: default;
-	}
-	.field button:active:not(:disabled) {
-		transform: scale(0.96);
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 
 	.tune {
@@ -196,14 +222,14 @@
 		background: var(--accent);
 		color: var(--on-accent);
 		font-family: var(--font-display);
-		font-size: 1.4rem;
-		font-weight: 600;
+		font-size: 1.5rem;
+		font-weight: 700;
 		letter-spacing: -0.02em;
-		box-shadow: 0 24px 60px -20px var(--accent);
-		transition: transform 160ms var(--ease-out);
+		box-shadow: var(--lip), var(--die-cut), var(--shadow-pop);
+		transition: background-color 160ms var(--ease-out);
 	}
-	.tune-btn:active {
-		transform: scale(0.96);
+	.tune-btn:hover {
+		background: var(--accent-hover);
 	}
 	.ring {
 		position: absolute;
@@ -240,7 +266,7 @@
 
 	/* ---------- app ---------- */
 	.shell {
-		position: relative; /* paints above <Backdrop/> */
+		position: relative;
 	}
 	.shell.docked {
 		display: grid;
@@ -249,13 +275,13 @@
 	}
 	.app {
 		max-width: 1180px;
+		min-width: 0; /* never let the header chips widen the column */
 		margin: 0 auto;
 		padding: 20px 32px 64px;
 	}
 	header {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		gap: 16px;
 		padding: 4px 0 28px;
 	}
@@ -264,42 +290,50 @@
 		align-items: center;
 		gap: 10px;
 	}
-	.brand .dot {
-		width: 14px;
-		height: 14px;
-		border-radius: 50%;
-		background: var(--accent);
-		box-shadow: 0 0 calc(4px + var(--energy) * 18px) var(--accent);
+	.hud-slot {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		overflow: hidden; /* chips truncate; they never push the layout wider */
+		padding: 4px 0; /* room for the countdown pulse */
 	}
 	.head-right {
 		display: flex;
 		align-items: center;
-		gap: 18px;
+		gap: 14px;
 		font-size: 0.85rem;
 	}
-	.status {
+	.me-btn {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
+		height: 36px;
+		padding: 0 12px;
+		border-radius: 999px;
 		color: var(--ink-2);
+		font-weight: 600;
+		transition:
+			background-color 160ms var(--ease-out),
+			color 160ms var(--ease-out);
 	}
-	.pip {
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		background: var(--ink-3);
+	.me-btn:hover {
+		background: var(--surface-2);
+		color: var(--ink);
 	}
-	.status.live .pip {
-		background: #22a35a;
+	.me-name {
+		max-width: 12ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
-	.status.reconnecting .pip {
-		background: var(--accent);
-		animation: blink 1s ease-in-out infinite;
-	}
-	@keyframes blink {
-		50% {
-			opacity: 0.25;
-		}
+
+	.rain {
+		position: fixed;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		z-index: 95;
+		pointer-events: none;
 	}
 
 	.grid {
@@ -330,18 +364,45 @@
 			margin: 0 auto;
 		}
 	}
-	@media (max-width: 560px) {
-		.app {
-			padding: 14px 16px 48px;
-		}
+	@media (max-width: 880px) {
 		header {
-			padding-bottom: 18px;
+			flex-wrap: wrap;
+		}
+		.hud-slot {
+			order: 3;
+			flex-basis: 100%;
 		}
 		.head-right {
-			gap: 12px;
+			margin-left: auto;
 		}
-		.status-text {
-			display: none;
+	}
+	@media (max-width: 560px) {
+		.app {
+			padding: 14px 16px calc(112px + env(safe-area-inset-bottom)); /* room for the transport bar */
+		}
+		header {
+			gap: 12px;
+			padding-bottom: 16px;
+		}
+		.head-right {
+			gap: 6px;
+		}
+		.me-name {
+			display: none; /* icon-only here; the label still names it */
+		}
+		.me-btn {
+			width: 36px;
+			justify-content: center;
+			padding: 0;
+		}
+		.wordmark.small {
+			font-size: 1.4rem;
+		}
+		header :global(.chat-btn) {
+			width: 36px;
+		}
+		.grid {
+			gap: 24px;
 		}
 	}
 </style>

@@ -73,8 +73,12 @@ const st = {
 	listeners: [],
 	library,
 	jobs: [],
-	history: [library[2], library[1]]
+	history: [library[2], library[1]],
+	dj_of_day: null
 };
+// DJ of the day: reactions count toward the current track's added_by (mock: in memory, no day roll).
+const reactionsFor = new Map(); // name -> [count, last_at]
+const lastPoke = new Map(); // listener id -> ms
 let nextListener = 1;
 let endTimer;
 
@@ -120,7 +124,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (ws, req) => {
 	const name = new URL(req.url, 'http://x').searchParams.get('name')?.trim() || 'anon';
 	const id = nextListener++;
-	st.listeners.push({ id, name });
+	st.listeners.push({ id, name, away: false });
 	// Same order as the real server: welcome -> chat_history -> state -> chat("joined").
 	ws.send(JSON.stringify({ type: 'welcome', you: id }));
 	ws.send(JSON.stringify({ type: 'chat_history', messages: chatLog.slice(-100) }));
@@ -128,8 +132,14 @@ wss.on('connection', (ws, req) => {
 	chat('event', name, 'joined');
 	ws.on('close', () => {
 		st.listeners = st.listeners.filter((l) => l.id !== id);
-		pushState();
 		chat('event', name, 'left');
+		// Auto-pause when the last listener leaves (same as the real server).
+		if (!st.listeners.length && st.playing) {
+			st.position_ms = livePos();
+			st.playing = false;
+			chat('event', 'Cloudberry', 'paused');
+		}
+		pushState();
 	});
 	ws.on('message', (raw) => {
 		const msg = JSON.parse(raw);
@@ -143,7 +153,31 @@ wss.on('connection', (ws, req) => {
 			}
 			case 'react':
 				if (!EMOJI.includes(msg.emoji)) return ws.send(JSON.stringify({ type: 'error', message: 'Unknown reaction' }));
-				return broadcast({ type: 'react', listener_id: id, name, emoji: msg.emoji });
+				broadcast({ type: 'react', listener_id: id, name, emoji: msg.emoji });
+				if (st.current) {
+					const by = st.current.added_by;
+					const [n = 0] = reactionsFor.get(by) ?? [];
+					reactionsFor.set(by, [n + 1, Date.now()]);
+					// Most reactions wins; ties go to the most recent reaction.
+					const top = [...reactionsFor].sort((a, b) => b[1][0] - a[1][0] || b[1][1] - a[1][1])[0][0];
+					if (top !== st.dj_of_day) {
+						st.dj_of_day = top;
+						pushState();
+					}
+				}
+				return;
+			case 'poke': {
+				const known = st.listeners.some((l) => l.id === msg.listener_id);
+				if (msg.listener_id === id || !known) return ws.send(JSON.stringify({ type: 'error', message: "Can't poke that listener" }));
+				if (Date.now() - (lastPoke.get(id) ?? 0) < 2000) return;
+				lastPoke.set(id, Date.now());
+				return broadcast({ type: 'poke', from_id: id, from_name: name, to_id: msg.listener_id });
+			}
+			case 'presence': {
+				const l = st.listeners.find((l) => l.id === id);
+				if (l) l.away = !!msg.away;
+				break;
+			}
 			case 'insert': {
 				const t = library.find((t) => t.id === msg.track_id);
 				if (!t) return ws.send(JSON.stringify({ type: 'error', message: 'Unknown track' }));
