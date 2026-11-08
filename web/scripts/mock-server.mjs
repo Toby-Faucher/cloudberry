@@ -47,10 +47,14 @@ const chatLog = [];
 const t0 = Date.now();
 for (const [kind, name, text, ago] of [
 	['event', 'Ana', 'joined', 600],
+	['event', 'Sam', 'joined', 598],
+	['event', 'Priya', 'joined', 597],
 	['user', 'Ana', 'morning all ☕', 590],
 	['event', 'Sam', 'added Bright Fifths', 400],
 	['user', 'Sam', 'this one is for the 10am slump', 395],
 	['user', 'Sam', 'turn it up', 380],
+	['event', 'Sam', 'left', 300], // a reconnect: hidden by the client
+	['event', 'Sam', 'joined', 290],
 	['event', 'Priya', 'skipped Some Song', 200],
 	['user', 'Priya', 'sorry, not feeling that one 😅', 190]
 ])
@@ -74,7 +78,8 @@ const st = {
 	library,
 	jobs: [],
 	history: [library[2], library[1]],
-	dj_of_day: null
+	// Seeded so the crown shows without reacting first.
+	dj_of_day: process.env.MOCK_DJ ?? null
 };
 // DJ of the day: reactions count toward the current track's added_by (mock: in memory, no day roll).
 const reactionsFor = new Map(); // name -> [count, last_at]
@@ -88,9 +93,9 @@ const wire = () => ({
 	...st,
 	current: st.current && { ...st.current, track: clean(st.current.track) },
 	queue: st.queue.map((q) => ({ ...q, track: clean(q.track) })),
-	library: st.library.map(clean),
 	history: st.history.map(clean)
 });
+const libraryMsg = () => ({ type: 'library', tracks: st.library.map(clean) });
 const broadcast = (msg) => wss.clients.forEach((c) => c.send(JSON.stringify(msg)));
 const pushState = () => {
 	clearTimeout(endTimer);
@@ -125,9 +130,10 @@ wss.on('connection', (ws, req) => {
 	const name = new URL(req.url, 'http://x').searchParams.get('name')?.trim() || 'anon';
 	const id = nextListener++;
 	st.listeners.push({ id, name, away: false });
-	// Same order as the real server: welcome -> chat_history -> state -> chat("joined").
+	// Same order as the real server: welcome -> chat_history -> library -> state -> chat("joined").
 	ws.send(JSON.stringify({ type: 'welcome', you: id }));
 	ws.send(JSON.stringify({ type: 'chat_history', messages: chatLog.slice(-100) }));
+	ws.send(JSON.stringify(libraryMsg()));
 	pushState();
 	chat('event', name, 'joined');
 	ws.on('close', () => {
@@ -221,8 +227,23 @@ wss.on('connection', (ws, req) => {
 				if (i >= 0) st.queue.splice(msg.to_index, 0, ...st.queue.splice(i, 1));
 				break;
 			}
+			case 'cancel_playlist': {
+				const before = jobs.length;
+				jobs = jobs.filter((j) => !(j.status === 'queued' && j.playlist?.id === msg.playlist_id));
+				if (jobs.length === before) return ws.send(JSON.stringify({ type: 'error', message: 'Nothing left to cancel' }));
+				st.jobs = jobs;
+				chat('event', name, 'cancelled playlist Mock Mix');
+				break;
+			}
 			case 'add': {
-				const job = { id: Date.now(), url: msg.url, status: 'downloading', progress: 0, title: null, error: null, added_by: name };
+				// Magic links for UI work: ...full -> "Queue is full", ...busy -> too many downloads.
+				if (msg.url.includes('full')) return ws.send(JSON.stringify({ type: 'error', message: 'Queue is full' }));
+				if (msg.url.includes('busy'))
+					return ws.send(JSON.stringify({ type: 'error', message: 'Too many downloads queued, try again soon' }));
+				const u = new URL(msg.url);
+				if (u.pathname === '/playlist') return importPlaylist(u.searchParams.get('list'), name);
+				const v = u.searchParams.get('v') ?? u.pathname.slice(1);
+				const job = { id: Date.now(), url: `https://www.youtube.com/watch?v=${v}`, status: 'downloading', progress: 0, title: null, error: null, added_by: name, playlist: null };
 				const tick = setInterval(() => {
 					job.progress = Math.min(1, job.progress + 0.2);
 					job.title = 'Fake download';
@@ -239,6 +260,40 @@ wss.on('connection', (ws, req) => {
 		pushState();
 	});
 });
+
+// Playlist import: 7 fake songs (2 already "cached"), downloaded one at a time, slowly.
+let jobs = st.jobs;
+function importPlaylist(list, name) {
+	const playlist = { id: list, title: 'Mock Mix' };
+	setTimeout(() => {
+		for (const i of [1, 2]) st.queue.push(qi(library[i], name));
+		const fresh = Array.from({ length: 5 }, (_, i) => ({
+			id: Date.now() + i, url: `https://www.youtube.com/watch?v=mockmix000${i}`, status: 'queued', progress: 0,
+			title: `Mix song ${i + 1}`, error: null, added_by: name, playlist
+		}));
+		jobs = st.jobs = [...jobs, ...fresh];
+		chat('event', name, 'added playlist Mock Mix (7 songs, 0 skipped)');
+		pushState();
+		const next = () => {
+			const j = jobs.find((j) => j.playlist?.id === list && j.status === 'queued');
+			if (!j) {
+				setTimeout(() => ((jobs = st.jobs = jobs.filter((x) => x.playlist?.id !== list)), pushState()), 8000);
+				return;
+			}
+			j.status = 'downloading';
+			const tick = setInterval(() => {
+				j.progress = Math.min(1, j.progress + 0.1);
+				if (j.progress >= 1) {
+					clearInterval(tick);
+					j.status = 'done';
+					next();
+				}
+				broadcast({ type: 'job', job: j });
+			}, Number(process.env.MOCK_DL_MS) || 800);
+		};
+		next();
+	}, 600);
+}
 
 const port = Number(process.env.PORT) || 8080;
 server.listen(port, () => console.log(`mock cloudberry on :${port}`));

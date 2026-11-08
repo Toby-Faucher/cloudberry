@@ -1,36 +1,27 @@
 <script lang="ts">
-	// The mark: seven drupelets in a 2-3-2 hex cluster, drawn like a sticker: flat body, flat
-	// shade, one white highlight per bead (hard stops, no soft gradients). Still: no idle motion.
+	// The real sticker mark (web/static/logo-mark.png, 96×96). `bead` is the old drupelet size;
+	// the mark spans ~3 beads so existing call sites keep their footprint. Decorative: the
+	// wordmark or the surrounding UI names it.
 	let { bead = 22, opacity = 1 }: { bead?: number | string; opacity?: number } = $props();
-	const rows = [2, 3, 2];
 </script>
 
-<div class="berry" style:--b={typeof bead === "number" ? `${bead}px` : bead} style:opacity aria-hidden="true">
-	{#each rows as n, r (r)}
-		<div class="row">
-			{#each Array(n) as _, i (i)}<span></span>{/each}
-		</div>
-	{/each}
-</div>
+<img
+	class="berry"
+	src="/logo-mark.png"
+	alt=""
+	width="96"
+	height="96"
+	draggable="false"
+	style:--b={typeof bead === 'number' ? `${bead}px` : bead}
+	style:opacity
+/>
 
 <style>
 	.berry {
-		display: grid;
-		justify-items: center;
-	}
-	.row {
-		display: flex;
-		gap: calc(var(--b) * 0.06);
-	}
-	.row + .row {
-		margin-top: calc(var(--b) * -0.12);
-	}
-	span {
-		width: var(--b);
-		height: var(--b);
-		border-radius: 50%;
-		background:
-			radial-gradient(circle at 34% 30%, #fffdf9 0 15%, transparent 16%),
-			radial-gradient(circle at 40% 36%, var(--berry-400) 0 58%, var(--berry-600) 59%);
+		display: block;
+		width: calc(var(--b) * 3);
+		height: calc(var(--b) * 3);
+		object-fit: contain;
+		user-select: none;
 	}
 </style>

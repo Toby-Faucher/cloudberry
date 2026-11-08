@@ -17,7 +17,7 @@
 		empty = 'Every track anyone adds lands here, ready to queue again.',
 		limit = Infinity
 	}: { station: Station; tracks?: Track[]; title?: string; empty?: string; limit?: number } = $props();
-	const library = $derived(tracks ?? station.state?.library ?? []);
+	const library = $derived(tracks ?? station.library);
 	const hid = $props.id();
 	let expanded = $state(false);
 	const shown = $derived(expanded ? library : library.slice(0, limit));

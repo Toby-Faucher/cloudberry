@@ -51,7 +51,7 @@
 						aria-label={l.id === station.you ? label(l) : `Poke ${label(l)}`}
 						onclick={() => station.poke(l.id)}
 					>
-						<Avatar name={l.name} me={l.id === station.you} size={34} />
+						<Avatar name={l.name} me={l.id === station.you} size={34} crown />
 					</Tooltip.Trigger>
 					<Tooltip.Portal>
 						<Tooltip.Content sideOffset={8} class="cb-tip">

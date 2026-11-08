@@ -11,12 +11,13 @@ use axum::routing::get;
 use axum::{Router, middleware};
 use serde::Deserialize;
 use serde_json::json;
-use station::{Shared, now_ms, state_msg};
+use station::{Shared, library_msg, now_ms, state_msg};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::mpsc;
 use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Clone, Debug)]
@@ -30,6 +31,8 @@ pub struct Config {
     pub idle_timeout: Duration,
     /// Kill yt-dlp (and its whole process group) after this long.
     pub download_timeout: Duration,
+    /// Kill a `--flat-playlist` expansion after this long.
+    pub playlist_timeout: Duration,
 }
 
 impl Config {
@@ -43,6 +46,7 @@ impl Config {
             ytdlp: var("CLOUDBERRY_YTDLP", "yt-dlp"),
             idle_timeout: Duration::from_secs(120),
             download_timeout: Duration::from_secs(900),
+            playlist_timeout: Duration::from_secs(60),
         }
     }
 }
@@ -74,6 +78,7 @@ pub fn app(cfg: Config) -> Result<(Router, Arc<Shared>), Box<dyn std::error::Err
         ServeDir::new(&cfg.static_dir).fallback(ServeFile::new(cfg.static_dir.join("index.html")));
     let router = Router::new()
         .route("/api/state", get(api_state))
+        .route("/api/library", get(api_library))
         .route("/ws", get(ws_upgrade))
         .merge(media)
         .fallback_service(site)
@@ -106,6 +111,12 @@ async fn media_file(shared: &Shared, file: &str, ext: &str, req: Request) -> Res
 async fn api_state(State(shared): State<Arc<Shared>>) -> Response {
     // Serialize under the lock, respond after releasing it.
     let body = serde_json::to_vec(&*shared.lock()).unwrap_or_default();
+    ([(header::CONTENT_TYPE, "application/json")], body).into_response()
+}
+
+/// The library (newest first); `/api/state` no longer includes it.
+async fn api_library(State(shared): State<Arc<Shared>>) -> Response {
+    let body = serde_json::to_vec(&shared.lock().library).unwrap_or_default();
     ([(header::CONTENT_TYPE, "application/json")], body).into_response()
 }
 
@@ -149,20 +160,48 @@ const REACTIONS: [&str; 6] = ["🔥", "😂", "❤️", "👏", "🎉", "😴"];
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum ClientMsg {
-    Ping { t0: f64 },
-    Add { url: String },
-    Enqueue { track_id: String },
-    Insert { track_id: String, index: usize },
-    Remove { queue_id: u64 },
-    Move { queue_id: u64, to_index: usize },
+    Ping {
+        t0: f64,
+    },
+    Add {
+        url: String,
+    },
+    Enqueue {
+        track_id: String,
+    },
+    Insert {
+        track_id: String,
+        index: usize,
+    },
+    Remove {
+        queue_id: u64,
+    },
+    Move {
+        queue_id: u64,
+        to_index: usize,
+    },
     Play,
     Pause,
     Skip,
-    Seek { position_ms: f64 },
-    Chat { text: String },
-    React { emoji: String },
-    Poke { listener_id: u64 },
-    Presence { away: bool },
+    Seek {
+        position_ms: f64,
+    },
+    Chat {
+        text: String,
+    },
+    React {
+        emoji: String,
+    },
+    Poke {
+        listener_id: u64,
+    },
+    Presence {
+        away: bool,
+    },
+    #[serde(rename = "cancel_playlist")]
+    CancelPlaylist {
+        playlist_id: String,
+    },
 }
 
 /// Sliding-window rate limit: at most `max` hits per 5 s.
@@ -203,6 +242,8 @@ struct Conn {
     react: Limiter,
     actions: Limiter,
     last_poke: Option<Instant>,
+    /// Frames for this client only, sent from background tasks.
+    reply: mpsc::UnboundedSender<Utf8Bytes>,
 }
 
 async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
@@ -212,6 +253,7 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
     let me = shared.join(name.clone());
     shared.event(&name, "joined");
     tracing::info!(id = me, %name, "listener joined");
+    let (reply, mut replies) = mpsc::unbounded_channel();
     let mut conn = Conn {
         id: me,
         name,
@@ -219,11 +261,15 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
         react: Limiter::new(10),
         actions: Limiter::new(10),
         last_poke: None,
+        reply,
     };
     let welcome = json!({ "type": "welcome", "you": me }).to_string();
     let history = json!({ "type": "chat_history", "messages": history }).to_string();
+    // Before the first `state` (already waiting in `rx`), so the UI never sees an empty library.
+    let library = library_msg(&shared.lock());
     if socket.send(Message::Text(welcome.into())).await.is_ok()
         && socket.send(Message::Text(history.into())).await.is_ok()
+        && socket.send(Message::Text(library)).await.is_ok()
     {
         // A deadline, not a per-recv timeout: broadcasts must not keep a silent client alive.
         let mut deadline = tokio::time::Instant::now() + shared.cfg.idle_timeout;
@@ -241,10 +287,16 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
                 },
                 b = rx.recv() => match b {
                     Ok(m) => Some(m),
-                    // Fell behind: the latest state supersedes what we missed.
-                    Err(RecvError::Lagged(_)) => Some(state_msg(&shared.lock())),
+                    // Fell behind: the latest state + library supersede what we missed.
+                    Err(RecvError::Lagged(_)) => {
+                        let st = shared.lock();
+                        let _ = conn.reply.send(library_msg(&st));
+                        Some(state_msg(&st))
+                    }
                     Err(RecvError::Closed) => break,
                 },
+                // Late replies to this client (e.g. a playlist that failed to load).
+                Some(m) = replies.recv() => Some(m),
             };
             if let Some(m) = out
                 && socket.send(Message::Text(m)).await.is_err()
@@ -279,6 +331,7 @@ fn handle(shared: &Arc<Shared>, conn: &mut Conn, text: &str) -> Option<Utf8Bytes
             | Pause
             | Skip
             | Seek { .. }
+            | CancelPlaylist { .. }
     );
     if mutating && !conn.actions.allow() {
         return None; // flood: dropped silently, like chat
@@ -330,7 +383,14 @@ fn handle(shared: &Arc<Shared>, conn: &mut Conn, text: &str) -> Option<Utf8Bytes
             shared.set_away(conn.id, away);
             return None;
         }
-        ClientMsg::Add { url } => ytdl::handle_add(shared, &url, name),
+        ClientMsg::Add { url } => ytdl::handle_add(shared, &url, name, &conn.reply),
+        ClientMsg::CancelPlaylist { playlist_id } => match shared.cancel_playlist(&playlist_id) {
+            Some(title) => {
+                event = Some(format!("cancelled playlist {title}"));
+                Ok(())
+            }
+            None => Err("Nothing left to cancel".into()),
+        },
         ClientMsg::Enqueue { track_id } => shared.enqueue(&track_id, name, usize::MAX),
         ClientMsg::Insert { track_id, index } => shared.enqueue(&track_id, name, index),
         ClientMsg::Remove { queue_id } => ok_or(
@@ -400,7 +460,7 @@ fn ok_or(ok: bool, err: &str) -> Result<(), String> {
     if ok { Ok(()) } else { Err(err.to_string()) }
 }
 
-fn error_msg(message: &str) -> Utf8Bytes {
+pub(crate) fn error_msg(message: &str) -> Utf8Bytes {
     json!({ "type": "error", "message": message })
         .to_string()
         .into()

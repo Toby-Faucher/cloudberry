@@ -61,7 +61,8 @@ The server never streams audio. It holds the **station state** and a clock.
   anchor `now + 300`. Seek: same, at the requested position.
 
 ## HTTP API
-- `GET /api/state` → `StationState` (same as WS `state` payload)
+- `GET /api/state` → `StationState` (same as WS `state` payload; no library, see below)
+- `GET /api/library` → `Track[]`, newest first (same as WS `library` payload)
 - `GET /audio/{id}.mp3`, `GET /art/{id}.jpg` → files from `CLOUDBERRY_MUSIC_DIR`
   (`Cache-Control: public, max-age=31536000, immutable`)
 - `GET /ws?name=<display name>` → WebSocket (name trimmed, 1–32 chars, else 400)
@@ -82,6 +83,8 @@ Server → client:
 ```
 { "type": "welcome", "you": <listener id u64> }     // first frame after connect
 { "type": "pong", "t0": <echoed>, "server_time": <ms f64> }
+{ "type": "library", "tracks": Track[] }           // newest first; after chat_history, before the
+                                                     // first state, and whenever the library changes
 { "type": "state", "state": StationState }          // on connect and after every change
 { "type": "job", "job": Job }                        // download progress updates
 { "type": "error", "message": "<text>" }
@@ -98,11 +101,11 @@ StationState {
   position_ms: f64,
   anchor_server_ms: f64,
   listeners: { id: u64, name: string }[],
-  library: Track[],                  // newest first
   jobs: Job[]                        // active + recently failed downloads
 }
 Job { id: u64, url: string, status: "queued"|"downloading"|"done"|"failed",
-      progress: f32 /*0..1*/, title: string|null, error: string|null, added_by: string }
+      progress: f32 /*0..1*/, title: string|null, error: string|null, added_by: string,
+      playlist: { id: string, title: string } | null }   // see Playlist import
 ```
 `play` with nothing current and a non-empty queue starts the head of the queue.
 Empty queue at track end → `current=null, playing=false`.
@@ -334,7 +337,8 @@ stop → stretch decays to ~0 within ~150 ms; rain particles fall and stay withi
    then flies into its spot in the now-playing card.
 3. **Reaction combos**: ≥ 3 of the same emoji within 2 s (from anyone) → "🔥 ×N COMBO" counter that grows,
    shakes, colour heats toward blush; resets after 2 s idle. Client-only.
-4. **DJ of the day**: crown on that listener's avatar everywhere. Server field below.
+4. **DJ of the day**: crown on that listener's avatar in the header listener stack (not on every
+   queue/library/history row: too noisy). Server field below.
 5. **Sync readout**: HUD chip "SYNC 3 ms" from the player's latest measured drift (abs, ms), green < 10,
    amber < 30, red ≥ 30 or "—" when not playing; tooltip explains.
 6. **Poke**: click another listener's avatar → their avatar wiggles on everyone's screen; the target also
@@ -385,6 +389,35 @@ count INT, last_at INT, PRIMARY KEY(day, name))`; a reaction counts toward the *
 - Tests: playlist URL validation (good/bad ids, foreign hosts, injection attempts), expansion parsing
   from a captured `--flat-playlist -J` fixture, truncation/capacity, cached entries enqueue without a
   job, cancel_playlist.
+
+### As built (2026-11-07)
+- Expansion runs in the background; a failure (`Couldn't load that playlist: <yt-dlp ERROR>`,
+  `Loading the playlist timed out`, `Another playlist is loading, try again soon` — one expansion at a
+  time server-wide) comes back to the sender as an `error` frame. Capacity errors reuse
+  `Queue is full` / `Too many downloads queued, try again soon`.
+- Job `title` is prefilled from the flat entry. Per-song "added <title>" events are not posted for
+  playlist jobs (the one summary event covers them). A playlist's finished rows stay until none of its
+  jobs is pending, then all go after ~8 s, so clients can show "done/total".
+- `cancel_playlist` posts `cancelled playlist <title>`; nothing left to cancel → `error`.
+- "(first N)" uses N = entries yt-dlp returned (50 with `--playlist-end 50`); truncation is detected
+  from `playlist_count` > entries.
+
+# Library out of `state` (audit #4, 2026-11-07; deliberate protocol change)
+`StationState.library` is gone: it was resent with every state change (pause, presence, queue edits)
+and grows without bound. The library now travels in its own `library` message (see protocol above),
+sent once per connection before the first `state` and broadcast when it changes (download finished,
+loudness measured). After a broadcast lag the server resends both `state` and `library`.
+`GET /api/library` serves it over HTTP.
+
+# Client notes (2026-11-07)
+- Chat collapses presence noise: a `left` + `joined` by the same name within 60 s (a reconnect) is
+  hidden; consecutive joined/left events render as one quiet line ("Ana, Sam joined · Priya left").
+  The server still emits every event.
+- Prefetch decodes the next track only if it is ≤ 8 min (decoded PCM ≈ 23 MB/min at 48 kHz stereo
+  float32).
+- Background tabs keep pinging (throttled to ~1/min by Chrome, inside the 120 s idle timeout). On
+  `visibilitychange` → visible the client pings at once and reconnects immediately if the socket is
+  closed or no pong arrives within 4 s.
 
 ---
 

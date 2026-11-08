@@ -19,7 +19,7 @@
  * Player classes below just wire them to the browser.
  */
 
-import type { StationState } from './types';
+import type { StationState, Track } from './types';
 
 // ---------------------------------------------------------------------------
 // Pure math
@@ -61,6 +61,10 @@ export function bestOffset(samples: readonly ClockSample[]): number | null {
 
 /** Track loudness correction (dB) -> linear gain. Missing/0 -> unity. */
 export const dbToGain = (db: number) => 10 ** ((db || 0) / 20);
+
+/** Prefetch (decode ahead) only tracks up to 8 min; longer ones decode when they start. */
+export const PREFETCH_MAX_MS = 8 * 60_000;
+export const shouldPrefetch = (t: Pick<Track, 'duration_ms'>) => t.duration_ms <= PREFETCH_MAX_MS;
 
 type Timeline = Pick<StationState, 'playing' | 'position_ms' | 'anchor_server_ms'>;
 
@@ -220,10 +224,12 @@ export class Player {
 		const cur = state.current;
 		const next = state.queue[0];
 
-		// Cache policy: current + next only (decoded PCM is ~10 MB/minute).
-		const keep = new Set([cur?.track.id, next?.track.id]);
+		// Cache policy: current + next only, and long next tracks aren't prefetched: decoded PCM is
+		// ≈ 23 MB/min (48 kHz × 2 ch × float32), so a 20-min track alone is ~460 MB.
+		const pre = next && shouldPrefetch(next.track) ? next.track.id : undefined;
+		const keep = new Set([cur?.track.id, pre]);
 		for (const id of this.buffers.keys()) if (!keep.has(id)) this.buffers.delete(id);
-		if (next) this.load(next.track.id).catch(() => {}); // prefetch; errors resurface on play
+		if (pre) this.load(pre).catch(() => {}); // prefetch; errors resurface on play
 		// gain_db can change later (measured lazily server-side), so apply on every state.
 		if (cur) this.trackGain.gain.setTargetAtTime(dbToGain(cur.track.gain_db), this.ctx.currentTime, 0.05);
 

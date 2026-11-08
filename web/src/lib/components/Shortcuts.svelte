@@ -16,6 +16,7 @@
 	import type { Station } from '#lib/station.svelte.ts';
 	import { focusChat, ui } from '#lib/ui.svelte.ts';
 	import { isTyping, isYouTubeUrl } from '#lib/util.ts';
+	import { linkParts } from '#lib/playlist.ts';
 	import { pressSkip, releaseSkip } from '#lib/hold.svelte.ts';
 	import { konami } from '#lib/game.ts';
 	import { startBerryRain } from '#lib/motion/smear.ts';
@@ -64,8 +65,8 @@
 		const text = e.clipboardData?.getData('text/plain')?.trim() ?? '';
 		if (!isYouTubeUrl(text)) return;
 		e.preventDefault();
-		station.send({ type: 'add', url: text });
-		station.showToast('Adding your link…');
+		station.add(text);
+		station.showToast(linkParts(text).playlist ? 'Loading the playlist…' : 'Adding your link…');
 	}
 </script>
 

@@ -5,7 +5,8 @@
 import { Clock, Player, expectedPositionMs, localNow } from './sync';
 import { ui } from './ui.svelte';
 import { Combo, COMBO_WINDOW_MS } from './game';
-import type { ChatMessage, ClientMsg, Emoji, Job, QueueItem, ServerMsg, StationState } from './types';
+import { addError, linkParts } from './playlist';
+import type { ChatMessage, ClientMsg, Emoji, Job, QueueItem, ServerMsg, StationState, Track } from './types';
 
 export type ConnStatus = 'connecting' | 'live' | 'reconnecting';
 
@@ -44,10 +45,22 @@ let reactionSeq = 0;
 const PING_BURST = 8;
 const PING_BURST_GAP_MS = 120;
 const PING_EVERY_MS = 2000;
+/** Server errors this soon after our `add` belong to the add box (playlist expansion takes up to 60 s). */
+const ADD_ERROR_WINDOW_MS = 65_000;
+/** No pong this long after a wake-up ping: the socket is dead even if it still says OPEN. */
+const WAKE_PONG_MS = 4000;
 
 export class Station {
 	state = $state<StationState | null>(null);
 	jobs = $state<Job[]>([]);
+	/** Every track ever added, newest first (its own `library` message, not part of state). */
+	library = $state<Track[]>([]);
+	/** Add-box feedback: a server error about our last add, or a "loading playlist" note. */
+	addNote = $state<{ text: string; error: boolean } | null>(null);
+	/** video id -> playlist id, for videos we added from a `watch?v=…&list=…` link. */
+	listHints = $state<Record<string, string>>({});
+	private lastAddAt = -Infinity;
+	private lastPongAt = 0;
 	you = $state<number | null>(null);
 	status = $state<ConnStatus>('connecting');
 	toast = $state<Toast | null>(null);
@@ -75,7 +88,7 @@ export class Station {
 	constructor(readonly name: string) {
 		this.player = new Player(this.clock, (m) => this.showToast(m));
 		this.connect();
-		document.addEventListener('visibilitychange', this.presence);
+		document.addEventListener('visibilitychange', this.visibility);
 	}
 
 	/** Away = tab hidden; everyone sees the avatar fade. */
@@ -83,6 +96,46 @@ export class Station {
 		if (this.ws?.readyState === WebSocket.OPEN)
 			this.ws.send(JSON.stringify({ type: 'presence', away: document.hidden } satisfies ClientMsg));
 	};
+
+	/**
+	 * Background tabs get their timers throttled (Chrome: ~1/min after 5 min hidden), which the
+	 * server's 120 s idle timeout tolerates. Coming back: ping now, and reconnect straight away if
+	 * the socket died meanwhile (closed, or open but no pong back).
+	 */
+	private visibility = () => {
+		this.presence();
+		if (document.hidden || this.closed) return;
+		const ws = this.ws;
+		if (!ws || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) return this.reconnectNow();
+		if (ws.readyState !== WebSocket.OPEN) return; // still connecting
+		const sent = performance.now();
+		this.ping();
+		setTimeout(() => {
+			if (this.ws === ws && this.lastPongAt < sent) this.reconnectNow();
+		}, WAKE_PONG_MS);
+	};
+
+	private reconnectNow() {
+		const old = this.ws;
+		this.ws = null; // its onclose must not schedule a second reconnect
+		old?.close();
+		this.clearTimers();
+		this.attempt = 0;
+		this.status = 'reconnecting';
+		this.connect();
+	}
+
+	/** Add a link (video or playlist). Server errors about it land in `addNote`. */
+	add(url: string) {
+		const v = url.trim();
+		const { video, list, playlist } = linkParts(v);
+		if (!playlist && video && list) this.listHints[video] = list;
+		this.lastAddAt = performance.now();
+		const note = playlist ? { text: 'Loading the playlist…', error: false } : null;
+		this.addNote = note;
+		if (note) setTimeout(() => this.addNote?.error === false && (this.addNote = null), ADD_ERROR_WINDOW_MS);
+		this.send({ type: 'add', url: v });
+	}
 
 	/** Poke someone else (server rate-limits to 1 per 2 s and rejects self). */
 	poke(id: number) {
@@ -97,7 +150,7 @@ export class Station {
 
 	close() {
 		this.closed = true;
-		document.removeEventListener('visibilitychange', this.presence);
+		document.removeEventListener('visibilitychange', this.visibility);
 		clearTimeout(this.comboTimer);
 		this.clearTimers();
 		this.ws?.close();
@@ -221,28 +274,37 @@ export class Station {
 				this.you = msg.you;
 				break;
 			case 'pong':
+				this.lastPongAt = performance.now();
 				this.clock.add(msg.t0, msg.server_time);
+				break;
+			case 'library':
+				this.library = msg.tracks;
 				break;
 			case 'state':
 				this.state = msg.state;
 				ui.dj = msg.state.dj_of_day ?? null;
 				this.jobs = msg.state.jobs;
+				if (!this.addNote?.error && msg.state.jobs.some((j) => j.playlist && j.added_by === this.name)) this.addNote = null;
 				this.player.update(msg.state);
 				break;
 			case 'job': {
 				const i = this.jobs.findIndex((j) => j.id === msg.job.id);
 				if (i >= 0) this.jobs[i] = msg.job;
 				else this.jobs.push(msg.job);
-				if (msg.job.status === 'done') {
+				// Playlist rows stay until the server clears the whole group (they drive "7/25").
+				if (msg.job.status === 'done' && !msg.job.playlist) {
 					// Let the checkmark show for a moment before it leaves.
 					const id = msg.job.id;
 					setTimeout(() => (this.jobs = this.jobs.filter((j) => j.id !== id)), 2500);
 				}
 				break;
 			}
-			case 'error':
-				this.showToast(msg.message);
+			case 'error': {
+				const add = performance.now() - this.lastAddAt < ADD_ERROR_WINDOW_MS ? addError(msg.message) : null;
+				if (add) this.addNote = { text: add, error: true };
+				else this.showToast(msg.message);
 				break;
+			}
 			case 'chat_history':
 				// Sent on every (re)connect: replace, don't append. What was said before we
 				// first joined isn't "unread".
@@ -251,6 +313,9 @@ export class Station {
 				break;
 			case 'chat':
 				if (this.chat.some((m) => m.id === msg.message.id)) break;
+				// Our playlist landed (possibly all from cache, so no job rows): drop "Loading…".
+				if (msg.message.name === this.name && msg.message.text.startsWith('added playlist') && !this.addNote?.error)
+					this.addNote = null;
 				this.chat = [...this.chat.slice(-(CHAT_KEEP - 1)), msg.message];
 				break;
 			case 'react':

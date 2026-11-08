@@ -34,6 +34,8 @@ export interface Job {
 	title: string | null;
 	error: string | null;
 	added_by: string;
+	/** Set for jobs from a playlist import; clients group these into one row. */
+	playlist: { id: string; title: string } | null;
 }
 
 export interface StationState {
@@ -43,7 +45,6 @@ export interface StationState {
 	position_ms: number;
 	anchor_server_ms: number;
 	listeners: Listener[];
-	library: Track[];
 	jobs: Job[];
 	/** Last 20 played, newest first. */
 	history: Track[];
@@ -77,12 +78,15 @@ export type ClientMsg =
 	| { type: 'react'; emoji: Emoji }
 	| { type: 'insert'; track_id: string; index: number }
 	| { type: 'poke'; listener_id: number }
-	| { type: 'presence'; away: boolean };
+	| { type: 'presence'; away: boolean }
+	| { type: 'cancel_playlist'; playlist_id: string };
 
 export type ServerMsg =
 	| { type: 'welcome'; you: number }
 	| { type: 'pong'; t0: number; server_time: number }
 	| { type: 'state'; state: StationState }
+	/** The whole library, newest first: sent before the first state and whenever it changes. */
+	| { type: 'library'; tracks: Track[] }
 	| { type: 'job'; job: Job }
 	| { type: 'error'; message: string }
 	| { type: 'chat_history'; messages: ChatMessage[] }
