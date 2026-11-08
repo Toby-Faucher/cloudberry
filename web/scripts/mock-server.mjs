@@ -70,7 +70,7 @@ let nextQ = 1;
 const qi = (t, by = t.added_by) => ({ queue_id: nextQ++, track: t, added_by: by });
 const st = {
 	current: qi(library[0]),
-	queue: [qi(library[1]), qi(library[2])],
+	queue: [qi(library[1]), qi(library[2]), qi(library[0], 'Sam')],
 	playing: true,
 	position_ms: 0,
 	anchor_server_ms: now() + 1500,

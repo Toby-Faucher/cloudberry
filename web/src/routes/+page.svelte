@@ -416,19 +416,6 @@
 			width: 100%;
 			margin: 0 auto;
 		}
-		header {
-			flex-wrap: wrap;
-			height: auto;
-			padding: 12px 0;
-			row-gap: 10px;
-		}
-		.hud-slot {
-			order: 3;
-			flex-basis: 100%;
-		}
-		.head-right {
-			margin-left: auto;
-		}
 	}
 	@media (max-width: 560px) {
 		/* The fixed transport bar lives inside .now's stacking context: lift the whole column. */

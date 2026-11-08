@@ -64,13 +64,11 @@ async function tuneIn(name, context) {
 	await page.addStyleTag({
 		content: `@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=block');
 		html:root {
-			--font-body: 'Inter Variable', 'Noto Color Emoji', system-ui, sans-serif;
-			--font-display: 'Bricolage Grotesque Variable', 'Inter Variable', 'Noto Color Emoji', system-ui, sans-serif;
-		}
-		button { font-family: var(--font-body); }`
+			--font-ui: 'Host Grotesk Variable', 'Helvetica Neue', Arial, 'Noto Color Emoji', sans-serif;
+		}`
 	});
 	await page.fill('#name', name);
-	await page.click('text=Continue');
+	await page.click('button[type=submit]');
 	await page.click('text=Tune in');
 	// The pause button only appears once the player is running on the shared timeline.
 	await page.waitForSelector('[aria-label="Pause for everyone"]', { timeout: 15000 });

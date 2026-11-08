@@ -7,7 +7,7 @@
 	 * A shader from the pack on a canvas. `fill` covers its box (lean-back); `aura` is
 	 * Bloom as a die-cut blob bleeding around its box (behind the now-playing art).
 	 * `still` (e.g. the track id): under reduced motion, one fixed frame per value.
-	 * Without WebGL2, a flat CSS gradient breathes with `energy` instead.
+	 * Without WebGL2, a static dot grid with an orange level line that stretches with `energy`.
 	 */
 	let {
 		shader = 'bloom',
@@ -64,16 +64,12 @@
 		requestAnimationFrame(redraw);
 	});
 
-	/** No WebGL2: a flat tinted shape that swells with energy. */
+	/** No WebGL2: the level line follows energy; the grid stays put. */
 	function runFallback() {
 		let energy = 0;
 		return frames.subscribe((f) => {
-			const el = fallback;
-			if (!el) return;
 			energy = follow(energy, f.energy + 0.3 * f.beat, f.dt, 0.1, 0.5);
-			el.style.setProperty('--tint', `rgb(${f.tint.map(Math.round).join(' ')})`);
-			el.style.opacity = (0.45 + 0.55 * energy).toFixed(3);
-			el.style.transform = `scale(${(0.92 + 0.14 * energy).toFixed(3)})`;
+			fallback?.style.setProperty('--e', energy.toFixed(3));
 		});
 	}
 </script>
@@ -108,16 +104,25 @@
 			height: 200%;
 		}
 	}
+	/* Instrument face: a dot grid on the well, one orange level line across the middle
+	   (it runs out past the art on both sides) that stretches with energy. */
 	.css {
-		--tint: var(--berry-500);
-		/* Flat tone bands, hard stops: same posterised look as the shader. */
-		background:
-			radial-gradient(40% 34% at 35% 40%, var(--berry-300) 0 99%, transparent 100%),
-			radial-gradient(70% 60% at 65% 65%, var(--tint) 0 99%, transparent 100%);
-		will-change: transform, opacity;
+		--e: 0;
+		background: radial-gradient(circle, var(--line-2) 0 1px, transparent 1.5px) center / 16px 16px var(--surface-2);
+	}
+	.css::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: calc(50% - 1px);
+		height: 2px;
+		background: var(--accent);
+		transform: scaleX(calc(0.6 + 0.4 * var(--e)));
 	}
 	.css.aura {
 		border-radius: 50%;
-		background: radial-gradient(closest-side, var(--tint) 0 60%, transparent 61%);
+		overflow: hidden;
+		box-shadow: inset 0 0 0 1px var(--line);
 	}
 </style>

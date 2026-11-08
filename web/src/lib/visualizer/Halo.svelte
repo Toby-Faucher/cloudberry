@@ -28,7 +28,6 @@
 		let rot = 0;
 		let pulse = 0;
 		let lastPulse = '';
-		let lastTint = '';
 
 		const draw = (f: Frame) => {
 			const { width: W, height: H } = canvas;
@@ -55,15 +54,9 @@
 			const base = C * R0 * (1 + 0.028 * pulse);
 			const inner = base + C * GAP;
 
-			// Tinted disc behind the ring, breathing with energy and beats. A CSS layer so
-			// per-frame changes are compositor-only opacity, not a full-canvas gradient fill.
-			const tint = `${r} ${gr} ${b}`;
-			if (tint !== lastTint) {
-				lastTint = tint;
-				// Flat sticker disc (hard stops), not a soft glow.
-				glowEl.style.background = `radial-gradient(closest-side, rgb(${tint}) 0 ${R0 * 170}%, rgb(${tint} / 0.45) ${R0 * 170}% 74%, transparent 74%)`;
-			}
-			glowEl.style.opacity = (0.12 + 0.3 * f.energy + 0.12 * pulse).toFixed(3);
+			// Neutral plate behind the ring (styled in CSS), breathing with energy and beats.
+			// Opacity only, so per-frame changes stay on the compositor.
+			glowEl.style.opacity = (0.8 + 0.15 * f.energy + 0.05 * pulse).toFixed(3);
 
 			// Spokes: bass at the top, mirrored down both sides, slowly turning.
 			const lw = Math.max(1.5, ((TAU * inner) / (BARS * 2)) * 0.46);
@@ -87,7 +80,9 @@
 			g.stroke();
 
 			// Peak beads just past each spoke.
-			g.fillStyle = rgba(0.55);
+			// Beads and the scope ring are neutral readouts; only the spokes carry colour.
+			const ink = getComputedStyle(canvas).color;
+			g.fillStyle = ink;
 			g.beginPath();
 			for (let i = 0; i < BARS; i++) {
 				if (f.peaks[i] < 0.04) continue;
@@ -104,7 +99,8 @@
 
 			// Thin oscilloscope ring outside the bars, mirrored and tapered so the seams vanish.
 			const wr = inner + C * (LEN + 0.018);
-			g.strokeStyle = rgba(0.22 + 0.4 * f.energy);
+			g.strokeStyle = ink;
+			g.globalAlpha = 0.5 + 0.5 * f.energy;
 			g.lineWidth = Math.max(1, C / 520);
 			g.beginPath();
 			for (const side of [1, -1]) {
@@ -121,6 +117,7 @@
 				}
 			}
 			g.stroke();
+			g.globalAlpha = 1;
 		};
 
 		const unsub = frames.subscribe(draw);
@@ -152,11 +149,14 @@
 	canvas,
 	.glow {
 		position: absolute;
+		color: var(--line-2);
 		aspect-ratio: 1;
 		pointer-events: none;
 	}
+	/* Face-grey plate with a hairline rim, set in the well: never tinted. */
 	.glow {
 		border-radius: 50%;
+		background: radial-gradient(closest-side, var(--surface) 0 73%, var(--line) 73% 74%, transparent 74%);
 		will-change: opacity;
 	}
 </style>
