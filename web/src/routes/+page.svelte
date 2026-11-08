@@ -16,6 +16,7 @@
 	import Shortcuts from '#lib/components/Shortcuts.svelte';
 	import Integrations from '#lib/components/Integrations.svelte';
 	import { ui } from '#lib/ui.svelte.ts';
+	import { Backdrop, LeanBack } from '#lib/visualizer/index.ts';
 
 	const NAME_KEY = 'cloudberry.name';
 	let name = $state(localStorage.getItem(NAME_KEY) ?? '');
@@ -75,6 +76,8 @@
 		{/if}
 	</main>
 {:else}
+	<Backdrop />
+	<LeanBack {station} />
 	<div class="shell" class:docked={ui.wide && ui.dock} in:fade={{ duration: dur(400) }}>
 		<div class="app">
 			<header>
@@ -236,6 +239,9 @@
 	}
 
 	/* ---------- app ---------- */
+	.shell {
+		position: relative; /* paints above <Backdrop/> */
+	}
 	.shell.docked {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 340px;

@@ -20,5 +20,18 @@ const top = bars.indexOf(Math.max(...bars));
 const edge = (i) => 30 * (16000 / 30) ** (i / BARS);
 console.log(`top band: ${top} (${edge(top).toFixed(0)}-${edge(top + 1).toFixed(0)} Hz) = ${bars[top].toFixed(3)}, peak ${peaks[top].toFixed(3)}`);
 console.log(`band 10: ${bars[10].toFixed(3)}, band 60: ${bars[60].toFixed(3)}`);
-console.log(`energy: ${w.energy().toFixed(3)}`);
-if (!(edge(top) <= HZ && HZ < edge(top + 1)) || imports.length) process.exit(1);
+console.log(`energy: ${w.energy().toFixed(3)}, bass: ${w.bass().toFixed(3)}, mid: ${w.mid().toFixed(3)}, treble: ${w.treble().toFixed(3)}`);
+const wave = view(w.waveform_ptr(), 256);
+console.log(`waveform[0..4]: ${[...wave.slice(0, 4)].map((v) => v.toFixed(3)).join(' ')}, max |v|: ${Math.max(...wave.map(Math.abs)).toFixed(3)}`);
+
+// Kick pattern: 60 Hz bursts every 0.5 s, 60 fps, each frame sees the last FFT_SIZE samples.
+const kick = (t) => (t < 0 ? 0 : 0.8 * Math.sin(2 * Math.PI * 60 * (t % 0.5)) * Math.exp(-(t % 0.5) / 0.06));
+const beats = [];
+for (let f = 1; f <= 120; f++) {
+  const end = f / 60, input = view(w.input_ptr(), FFT_SIZE);
+  for (let i = 0; i < FFT_SIZE; i++) input[i] = kick(end - (FFT_SIZE - i) / SR);
+  w.process(SR, 1 / 60);
+  if (w.beat() === 1) beats.push(end.toFixed(3));
+}
+console.log(`beats (kicks at 0.5 s steps, 2 s): ${beats.join(' ')}`);
+if (!(edge(top) <= HZ && HZ < edge(top + 1)) || imports.length || beats.length !== 4) process.exit(1);

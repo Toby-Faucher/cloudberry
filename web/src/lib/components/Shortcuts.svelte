@@ -5,6 +5,7 @@
 		[['N'], 'Skip (with undo)'],
 		[['/'], 'Chat'],
 		[['?'], 'This help'],
+		[['F'], 'Lean-back (fullscreen visualizer)'],
 		[['Ctrl', 'V'], 'Paste a YouTube link anywhere to add it']
 	];
 </script>
