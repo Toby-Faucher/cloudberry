@@ -1,4 +1,5 @@
 pub mod loudness;
+pub mod playlists;
 pub mod station;
 pub mod ytdl;
 
@@ -9,6 +10,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Router, middleware};
+use playlists::playlists_msg;
 use serde::Deserialize;
 use serde_json::json;
 use station::{Shared, library_msg, now_ms, state_msg};
@@ -79,6 +81,7 @@ pub fn app(cfg: Config) -> Result<(Router, Arc<Shared>), Box<dyn std::error::Err
     let router = Router::new()
         .route("/api/state", get(api_state))
         .route("/api/library", get(api_library))
+        .route("/api/playlists", get(api_playlists))
         .route("/ws", get(ws_upgrade))
         .merge(media)
         .fallback_service(site)
@@ -117,6 +120,12 @@ async fn api_state(State(shared): State<Arc<Shared>>) -> Response {
 /// The library (newest first); `/api/state` no longer includes it.
 async fn api_library(State(shared): State<Arc<Shared>>) -> Response {
     let body = serde_json::to_vec(&shared.lock().library).unwrap_or_default();
+    ([(header::CONTENT_TYPE, "application/json")], body).into_response()
+}
+
+/// Saved playlists, most recently updated first (same as the WS `playlists` payload).
+async fn api_playlists(State(shared): State<Arc<Shared>>) -> Response {
+    let body = serde_json::to_vec(&shared.lock().playlists).unwrap_or_default();
     ([(header::CONTENT_TYPE, "application/json")], body).into_response()
 }
 
@@ -202,6 +211,42 @@ enum ClientMsg {
     CancelPlaylist {
         playlist_id: String,
     },
+    #[serde(rename = "playlist_create")]
+    PlaylistCreate {
+        name: String,
+        #[serde(default)]
+        track_ids: Vec<String>,
+    },
+    #[serde(rename = "playlist_rename")]
+    PlaylistRename {
+        id: u64,
+        name: String,
+    },
+    #[serde(rename = "playlist_delete")]
+    PlaylistDelete {
+        id: u64,
+    },
+    #[serde(rename = "playlist_add")]
+    PlaylistAdd {
+        id: u64,
+        track_ids: Vec<String>,
+    },
+    #[serde(rename = "playlist_remove")]
+    PlaylistRemove {
+        id: u64,
+        index: usize,
+    },
+    #[serde(rename = "playlist_move")]
+    PlaylistMove {
+        id: u64,
+        from: usize,
+        to: usize,
+    },
+    #[serde(rename = "playlist_queue")]
+    PlaylistQueue {
+        id: u64,
+        shuffle: bool,
+    },
 }
 
 /// Sliding-window rate limit: at most `max` hits per 5 s.
@@ -266,10 +311,14 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
     let welcome = json!({ "type": "welcome", "you": me }).to_string();
     let history = json!({ "type": "chat_history", "messages": history }).to_string();
     // Before the first `state` (already waiting in `rx`), so the UI never sees an empty library.
-    let library = library_msg(&shared.lock());
+    let (library, playlists) = {
+        let st = shared.lock();
+        (library_msg(&st), playlists_msg(&st))
+    };
     if socket.send(Message::Text(welcome.into())).await.is_ok()
         && socket.send(Message::Text(history.into())).await.is_ok()
         && socket.send(Message::Text(library)).await.is_ok()
+        && socket.send(Message::Text(playlists)).await.is_ok()
     {
         // A deadline, not a per-recv timeout: broadcasts must not keep a silent client alive.
         let mut deadline = tokio::time::Instant::now() + shared.cfg.idle_timeout;
@@ -291,6 +340,7 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
                     Err(RecvError::Lagged(_)) => {
                         let st = shared.lock();
                         let _ = conn.reply.send(library_msg(&st));
+                        let _ = conn.reply.send(playlists_msg(&st));
                         Some(state_msg(&st))
                     }
                     Err(RecvError::Closed) => break,
@@ -332,6 +382,13 @@ fn handle(shared: &Arc<Shared>, conn: &mut Conn, text: &str) -> Option<Utf8Bytes
             | Skip
             | Seek { .. }
             | CancelPlaylist { .. }
+            | PlaylistCreate { .. }
+            | PlaylistRename { .. }
+            | PlaylistDelete { .. }
+            | PlaylistAdd { .. }
+            | PlaylistRemove { .. }
+            | PlaylistMove { .. }
+            | PlaylistQueue { .. }
     );
     if mutating && !conn.actions.allow() {
         return None; // flood: dropped silently, like chat
@@ -390,6 +447,17 @@ fn handle(shared: &Arc<Shared>, conn: &mut Conn, text: &str) -> Option<Utf8Bytes
                 Ok(())
             }
             None => Err("Nothing left to cancel".into()),
+        },
+        PlaylistCreate { name: n, track_ids } => shared.playlist_create(&n, track_ids, name),
+        PlaylistRename { id, name: n } => shared.playlist_rename(id, &n, name),
+        PlaylistDelete { id } => shared.playlist_delete(id, name),
+        PlaylistAdd { id, track_ids } => shared.playlist_add(id, track_ids),
+        PlaylistRemove { id, index } => shared.playlist_remove(id, index),
+        PlaylistMove { id, from, to } => shared.playlist_move(id, from, to),
+        // A partial fit comes back as an `error` frame too: clients show those as a toast.
+        PlaylistQueue { id, shuffle } => match shared.playlist_queue(id, shuffle, name) {
+            Ok(Some(notice)) => return Some(error_msg(&notice)),
+            other => other.map(drop),
         },
         ClientMsg::Enqueue { track_id } => shared.enqueue(&track_id, name, usize::MAX),
         ClientMsg::Insert { track_id, index } => shared.enqueue(&track_id, name, index),

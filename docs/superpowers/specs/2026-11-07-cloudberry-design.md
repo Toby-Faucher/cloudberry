@@ -537,3 +537,86 @@ looks like Animal Crossing." He chose **Hardware / TE-style**: inspired by Teena
 - Motion: keep anime.js + WASM smear but tune to "mechanical": short, snappy, eased like switches and
   meters (counters roll, LEDs blink, keys depress), never bouncy-cute.
 - Keep every feature/behaviour from Phases 2–5 and the playlist work; this is a visual redesign.
+
+---
+
+# Saved shared playlists (added 2026-11-07; Toby: "Can we make a playlist section?" → chose shared playlists)
+
+## Behaviour
+- Anyone can create, rename, delete and edit playlists (no owner lock). Shown in a **Playlists** section
+  next to Library: name, song count, total duration, created_by. Opening one shows its songs as a
+  numbered table (queue style) with drag reorder + remove, and two primary keys: **Queue all** (append in
+  order) and **Shuffle** (append shuffled). If the 200-item queue cap would be exceeded, append as many as
+  fit and return a notice ("Queued 34 of 60, queue is full").
+- Adding songs: a "+ playlist" action on library, history and queue rows (pick existing or create new);
+  "Save queue as playlist" on Up next.
+- YouTube playlist imports auto-save a playlist (`source_list_id` = YouTube list id). Re-importing the same
+  list updates that playlist's tracks (in YouTube order) instead of creating a duplicate; tracks get added as
+  each download finishes; skipped/failed entries are simply absent.
+- Delete shows an Undo toast (client re-creates via `playlist_create` with the same name + track_ids).
+- Chat events: `created playlist <name>`, `renamed playlist <old> to <new>`, `deleted playlist <name>`,
+  `queued playlist <name> (N songs)` / `shuffled playlist <name> (N songs)`. Track adds/removes/moves
+  inside a playlist post no event (too noisy).
+- Limits: ≤ 100 playlists, ≤ 500 tracks each, name 1–60 chars after trim (duplicate names allowed but the
+  client warns). Every playlist message counts against the existing per-connection action limiter.
+
+## Protocol
+Server → client (sent once after `library` on connect, and broadcast after any playlist change):
+```
+{ "type": "playlists", "playlists": Playlist[] }    // newest-updated first
+Playlist { id: u64, name: string, created_by: string, created_at: u64, updated_at: u64,
+           track_ids: string[], source_list_id: string | null }
+```
+Client → server:
+```
+{ "type": "playlist_create", "name": "<name>", "track_ids": ["<id>", ...] }   // track_ids optional
+{ "type": "playlist_rename", "id": <u64>, "name": "<name>" }
+{ "type": "playlist_delete", "id": <u64> }
+{ "type": "playlist_add", "id": <u64>, "track_ids": ["<id>", ...] }          // appends, skips unknown ids
+{ "type": "playlist_remove", "id": <u64>, "index": <usize> }
+{ "type": "playlist_move", "id": <u64>, "from": <usize>, "to": <usize> }
+{ "type": "playlist_queue", "id": <u64>, "shuffle": <bool> }
+```
+Errors as `error` frames: "Unknown playlist", "Playlist name must be 1–60 characters", "Too many playlists",
+"Playlist is full". The same track may appear more than once in a playlist.
+`GET /api/playlists` returns the list (like `/api/library`).
+
+## Persistence
+`playlists(id INTEGER PK, name TEXT, created_by TEXT, created_at INT, updated_at INT, source_list_id TEXT UNIQUE NULL)`,
+`playlist_tracks(playlist_id INT, position INT, track_id TEXT, PRIMARY KEY(playlist_id, position))`;
+migration from the current schema; writes in a transaction.
+
+### As built (2026-11-07)
+- **Queue-cap notice is an `error` frame** to the sender only: `Queued 34 of 60, queue is full`. Clients
+  already show `error` frames as a toast (it is not one of the add-box errors), and a chat event would
+  tell everyone about one person's partial fit. The chat event still goes out with the real count
+  (`queued playlist Mix (34 songs)`; "1 song" when singular). Nothing fit at all → `Queue is full`.
+- Extra error strings beyond the four above: `No such song in that playlist` (remove/move index out of
+  range), `That playlist is empty` (queue/shuffle an empty one), `Unknown track` (`playlist_add` where every
+  id is unknown), `Couldn't save the playlist` (SQLite write failed; memory only changes after the write
+  commits). `playlist_add` past 500 is all-or-nothing (`Playlist is full`); `playlist_create` also skips
+  unknown ids and refuses > 500.
+- `playlist_move` clamps `to` to the end; `from` out of range is an error. Errors count against the action
+  limiter like every other playlist message (10 / 5 s, excess dropped silently).
+- "Updated" = created, renamed, or its songs changed (moves it to the front). Queueing doesn't.
+- Ids use `INTEGER PRIMARY KEY AUTOINCREMENT`, so a deleted playlist's id is never reused (Undo makes a new
+  one; a stale client can't edit the wrong list). Every write is one transaction that rewrites that
+  playlist's `playlist_tracks` rows (≤ 500). Migration = `CREATE TABLE IF NOT EXISTS` on startup.
+- `playlists` is also resent after a broadcast lag, alongside `state` + `library`.
+- **YouTube imports:** saved right after the expansion succeeds (before queueing), named after the YouTube
+  title (cut to 60 chars). A re-import replaces the songs with the entries already in the library, in
+  YouTube order, and keeps the saved playlist's id and *name* (someone may have renamed it). Each finished
+  download is inserted after the songs that precede it on YouTube (each job carries the list order + its
+  index), so the result is YouTube order minus failures even though cached songs land first. At 100
+  playlists an import still queues; it just isn't saved (logged). No extra chat event: the import's
+  `added playlist …` covers it. Edits made while an import is still downloading are kept; late songs slot
+  in around them.
+- Shuffle: Fisher–Yates with a xorshift seeded from std's `RandomState` (no new crate).
+- Client: the Playlists section sits between Just played and Library. List → detail in place (Esc / back
+  key returns, focus goes back to the row). Detail: numbered rows with drag (svelte-dnd-action, same pattern
+  as Up next: local order until the next `playlists`, snap back after 1.5 s if nothing came), up/down/remove
+  keys for keyboard and touch, rename by clicking the name, **Queue all** (graphite key) + **Shuffle** (key
+  cap), delete with a 6 s Undo toast (re-creates by name + track ids, new id). "+ playlist" is a Bits UI
+  popover on library rows, queue rows and Just played covers: existing playlists (filter field past 6) +
+  "New playlist…"; duplicate names get a one-line warning but are allowed. Up next has a **Save** key
+  (popover, default name "Up next, Nov 7") that saves the upcoming queue (not the current track).

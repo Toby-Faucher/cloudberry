@@ -8,6 +8,7 @@
 	import Art from './Art.svelte';
 	import Avatar from './Avatar.svelte';
 	import Icon from '#lib/icons/Icon.svelte';
+	import PlaylistPicker from './PlaylistPicker.svelte';
 
 	/** Everything anyone ever added, newest first: a ruled table. */
 	let { station }: { station: Station } = $props();
@@ -43,6 +44,7 @@
 								<Icon name={flashed === t.id ? 'check' : 'plus'} size={14} />
 							</span>
 						</button>
+						<PlaylistPicker {station} ids={[t.id]} label="Add {t.title} to a playlist" triggerClass="icon-btn pl" />
 					</li>
 				{/each}
 			</ul>
@@ -68,10 +70,18 @@
 		padding: 0;
 	}
 	li {
+		display: flex;
+		align-items: center;
 		border-bottom: 1px solid var(--line);
 	}
+	li :global(.pl) {
+		flex: none;
+		width: 32px;
+		height: 32px;
+	}
 	.row {
-		width: 100%;
+		flex: 1;
+		min-width: 0;
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr) minmax(0, 8rem) 3.2rem auto;
 		align-items: center;

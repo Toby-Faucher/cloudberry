@@ -7,7 +7,7 @@ import { ui } from './ui.svelte';
 import { Combo, COMBO_WINDOW_MS } from './game';
 import { addError, linkParts } from './playlist';
 import { matchPending, PENDING_MS, type PendingChat } from './chat';
-import type { ChatMessage, ClientMsg, Emoji, Job, QueueItem, ServerMsg, StationState, Track } from './types';
+import type { ChatMessage, ClientMsg, Emoji, Job, Playlist, QueueItem, ServerMsg, StationState, Track } from './types';
 
 export type ConnStatus = 'connecting' | 'live' | 'reconnecting';
 
@@ -57,6 +57,10 @@ export class Station {
 	jobs = $state<Job[]>([]);
 	/** Every track ever added, newest first (its own `library` message, not part of state). */
 	library = $state<Track[]>([]);
+	/** Saved shared playlists, most recently updated first (own `playlists` message). */
+	playlists = $state<Playlist[]>([]);
+	/** Library by id, for playlist rows (playlists only carry track ids). */
+	byId = $derived(new Map(this.library.map((t) => [t.id, t])));
 	/** Add-box feedback: a server error about our last add, or a "loading playlist" note. */
 	addNote = $state<{ text: string; error: boolean } | null>(null);
 	/** video id -> playlist id, for videos we added from a `watch?v=…&list=…` link. */
@@ -141,6 +145,30 @@ export class Station {
 		this.addNote = note;
 		if (note) setTimeout(() => this.addNote?.error === false && (this.addNote = null), ADD_ERROR_WINDOW_MS);
 		this.send({ type: 'add', url: v });
+	}
+
+	/** Create a playlist (optionally with songs); the server posts "created playlist …". */
+	createPlaylist(name: string, track_ids: string[] = []) {
+		this.send({ type: 'playlist_create', name: name.trim(), track_ids });
+	}
+
+	addToPlaylist(p: Playlist, track_ids: string[]) {
+		this.send({ type: 'playlist_add', id: p.id, track_ids });
+		this.showToast(track_ids.length === 1 ? `Added to “${p.name}”` : `Added ${track_ids.length} songs to “${p.name}”`);
+	}
+
+	/** Append to the queue in order (or shuffled). A partial fit comes back as a server notice toast. */
+	queuePlaylist(p: Playlist, shuffle: boolean) {
+		this.lastAddAt = -Infinity; // "Queue is full" here is about this, not the add box
+		this.send({ type: 'playlist_queue', id: p.id, shuffle });
+		const n = p.track_ids.length;
+		this.showToast(`${shuffle ? 'Shuffled' : 'Queued'} “${p.name}”, ${n} song${n === 1 ? '' : 's'}`);
+	}
+
+	/** Delete for everyone; Undo re-creates it (new id) with the same name and songs. */
+	deletePlaylist(p: Playlist) {
+		this.send({ type: 'playlist_delete', id: p.id });
+		this.showToast(`Deleted “${p.name}”`, () => this.createPlaylist(p.name, p.track_ids));
 	}
 
 	/** Poke someone else (server rate-limits to 1 per 2 s and rejects self). */
@@ -300,6 +328,9 @@ export class Station {
 				break;
 			case 'library':
 				this.library = msg.tracks;
+				break;
+			case 'playlists':
+				this.playlists = msg.playlists;
 				break;
 			case 'state':
 				this.state = msg.state;

@@ -423,6 +423,7 @@ async fn import_playlist(
         .try_acquire()
         .map_err(|_| "Another playlist is loading, try again soon")?;
     let pl = expand(shared, list_id).await?;
+    shared.save_import(list_id, &pl, added_by);
     let (songs, skipped, requests) = shared.import_playlist(list_id, &pl, added_by)?;
     for r in requests {
         shared
@@ -478,6 +479,7 @@ pub fn handle_add(
         error: None,
         added_by: added_by.to_string(),
         playlist: None,
+        import_pos: None,
     };
     let job_id = shared.add_job(job)?;
     shared

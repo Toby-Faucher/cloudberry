@@ -79,6 +79,10 @@ pub struct Job {
     pub added_by: String,
     /// Set for jobs created by a playlist import, so clients can group them.
     pub playlist: Option<PlaylistRef>,
+    /// Import jobs: the playlist's video ids in YouTube order and this job's index in them, so
+    /// the finished track lands at the right spot in the saved playlist.
+    #[serde(skip)]
+    pub import_pos: Option<(Arc<[String]>, usize)>,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -114,6 +118,9 @@ pub struct Station {
     pub history: Vec<Track>,
     /// Whose queued tracks got the most reactions today (server local day).
     pub dj_of_day: Option<String>,
+    /// Saved shared playlists, most recently updated first. Sent as its own `playlists` message.
+    #[serde(skip)]
+    pub playlists: Vec<crate::playlists::Playlist>,
     #[serde(skip)]
     next_id: u64,
     #[serde(skip)]
@@ -311,7 +318,7 @@ impl Shared {
         self.station.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn send(&self, msg: Utf8Bytes) {
+    pub(crate) fn send(&self, msg: Utf8Bytes) {
         let _ = self.tx.send(msg); // Err only means no listeners
     }
 
@@ -475,8 +482,9 @@ impl Shared {
     ) -> Result<(usize, usize, Vec<DlRequest>), String> {
         let mut missing = Vec::new();
         let (mut cached, mut full) = (0, false);
+        let order: Arc<[String]> = pl.entries.iter().map(|(id, _)| id.clone()).collect();
         self.change(|st, now| {
-            for (id, title) in &pl.entries {
+            for (k, (id, title)) in pl.entries.iter().enumerate() {
                 match st.track(id).cloned() {
                     Some(t) => {
                         if st.push(t, added_by, now) {
@@ -485,7 +493,7 @@ impl Shared {
                             full = true;
                         }
                     }
-                    None => missing.push((id, title)),
+                    None => missing.push((k, id, title)),
                 }
             }
             cached > 0
@@ -494,7 +502,7 @@ impl Shared {
         let pending = st.jobs.iter().filter(|j| j.pending()).count();
         let room = MAX_PENDING_JOBS.saturating_sub(pending);
         let mut requests = Vec::new();
-        for (id, title) in missing.iter().take(room) {
+        for (k, id, title) in missing.iter().take(room) {
             let job_id = st.next_id();
             st.jobs.push(Job {
                 id: job_id,
@@ -508,6 +516,7 @@ impl Shared {
                     id: list_id.to_string(),
                     title: pl.title.clone(),
                 }),
+                import_pos: Some((Arc::clone(&order), *k)),
             });
             requests.push(DlRequest {
                 job_id,
@@ -584,14 +593,18 @@ impl Shared {
     }
 
     pub fn finish_job(self: &Arc<Self>, id: u64, mut track: Track) {
-        let (added_by, in_playlist) = {
+        let (added_by, list, import_pos) = {
             let st = self.lock();
             st.jobs
                 .iter()
                 .find(|j| j.id == id)
-                .map(|j| (j.added_by.clone(), j.playlist.is_some()))
+                .map(|j| {
+                    let list = j.playlist.as_ref().map(|p| p.id.clone());
+                    (j.added_by.clone(), list, j.import_pos.clone())
+                })
                 .unwrap_or_default()
         };
+        let in_playlist = list.is_some();
         self.update_job(id, |j| {
             j.status = JobStatus::Done;
             j.progress = 1.0;
@@ -610,6 +623,9 @@ impl Shared {
         });
         if new {
             self.send(library_msg(&self.lock()));
+        }
+        if let (Some(list), Some((order, k))) = (list, import_pos) {
+            self.import_landed(&list, &order[..k], &track.id);
         }
         // A playlist import posts one summary event instead of one per song.
         if !in_playlist {
@@ -643,7 +659,7 @@ impl Shared {
         });
     }
 
-    fn db(&self) -> MutexGuard<'_, Connection> {
+    pub(crate) fn db(&self) -> MutexGuard<'_, Connection> {
         self.db.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -846,7 +862,13 @@ fn load(db: &Connection) -> rusqlite::Result<Station> {
              name TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS history(track_id TEXT NOT NULL, played_at INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS reactions(day TEXT NOT NULL, name TEXT NOT NULL,
-             count INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY(day, name));",
+             count INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY(day, name));
+         CREATE TABLE IF NOT EXISTS playlists(id INTEGER PRIMARY KEY AUTOINCREMENT,
+             name TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
+             updated_at INTEGER NOT NULL, source_list_id TEXT UNIQUE);
+         CREATE TABLE IF NOT EXISTS playlist_tracks(playlist_id INTEGER NOT NULL,
+             position INTEGER NOT NULL, track_id TEXT NOT NULL,
+             PRIMARY KEY(playlist_id, position));",
     )?;
     // Phase 2 migration. NULL = not measured yet (the startup backfill looks for it).
     let has_gain: bool = db.query_row(
@@ -874,6 +896,7 @@ fn load(db: &Connection) -> rusqlite::Result<Station> {
     let mut st = Station {
         library,
         dj_of_day: dj_of_day(db),
+        playlists: crate::playlists::load(db)?,
         ..Station::default()
     };
     let item = |st: &Station, queue_id: u64, track_id: &str, added_by: String| {
@@ -1187,6 +1210,7 @@ mod tests {
             error: None,
             added_by: "toby".into(),
             playlist: None,
+            import_pos: None,
         }
     }
 

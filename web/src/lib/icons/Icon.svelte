@@ -27,6 +27,9 @@
 		| 'poke'
 		| 'undo'
 		| 'pencil'
+		| 'back'
+		| 'shuffle'
+		| 'trash'
 		// Reactions (ids from reactions.ts).
 		| 'flame'
 		| 'laugh'
@@ -121,6 +124,13 @@
 	{:else if name === 'pencil'}
 		<path d="M15 4.5 19.5 9 9 19.5H4.5V15Z" />
 		<path d="M12.5 7l4.5 4.5" />
+	{:else if name === 'back'}
+		<path d="M14.5 6.5 9 12l5.5 5.5" />
+	{:else if name === 'shuffle'}
+		<path d="M4 7.5h3.5l9 9H20M4 16.5h3.5l2.5-2.5M14 10l2.5-2.5H20" />
+		<path d="M17.5 5 20 7.5 17.5 10M17.5 14 20 16.5 17.5 19" />
+	{:else if name === 'trash'}
+		<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5M10.5 10.5v6M13.5 10.5v6" />
 	{:else if name === 'flame'}
 		<path d="M12 3c.5 3.5 6 5.5 6 11a6 6 0 0 1-12 0c0-3 1.5-4.5 3-6 .3 2 1 3 2.2 3.4C11 8.5 10.8 6 12 3Z" />
 	{:else if name === 'laugh'}

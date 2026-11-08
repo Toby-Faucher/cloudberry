@@ -78,6 +78,8 @@ async fn websocket_flow() {
     // The library comes on its own, before the first state.
     let library = next_json(&mut ws).await;
     assert_eq!(library, json!({ "type": "library", "tracks": [] }));
+    let playlists = next_json(&mut ws).await;
+    assert_eq!(playlists, json!({ "type": "playlists", "playlists": [] }));
 
     let state = next_json(&mut ws).await;
     assert_eq!(state["type"], "state");
@@ -306,6 +308,7 @@ async fn chat_reactions_and_history_on_connect() {
     let me = next_json(&mut a).await["you"].as_u64().unwrap();
     assert_eq!(next_json(&mut a).await["type"], "chat_history");
     assert_eq!(next_json(&mut a).await["type"], "library");
+    assert_eq!(next_json(&mut a).await["type"], "playlists");
     assert_eq!(next_json(&mut a).await["type"], "state");
     let joined = next_json(&mut a).await;
     assert!(is_chat(&joined, "event", "Toby", "joined"), "{joined}");
@@ -348,6 +351,7 @@ async fn chat_reactions_and_history_on_connect() {
     assert_eq!(msgs[1]["id"], hello_id);
     assert_eq!(msgs[1]["kind"], "user");
     assert_eq!(next_json(&mut b).await["type"], "library");
+    assert_eq!(next_json(&mut b).await["type"], "playlists");
     assert_eq!(next_json(&mut b).await["type"], "state");
     assert!(is_chat(&next_json(&mut b).await, "event", "Ann", "joined"));
     wait_for(&mut a, |m| is_chat(m, "event", "Ann", "joined")).await;
@@ -922,5 +926,443 @@ async fn playlist_import_cancel_and_errors() {
         wait_for(&mut ws, |m| m["type"] == "error").await["message"],
         "Loading the playlist timed out"
     );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// ---------- saved shared playlists ----------
+
+/// A DB in the schema as it was before playlists (phase 3: with `reactions`), three tracks.
+fn pre_playlists_dir(tag: &str) -> std::path::PathBuf {
+    let dir = phase2_dir(tag);
+    let db = rusqlite::Connection::open(dir.join("db.sqlite")).unwrap();
+    db.execute_batch(
+        "CREATE TABLE reactions(day TEXT NOT NULL, name TEXT NOT NULL,
+             count INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY(day, name));",
+    )
+    .unwrap();
+    dir
+}
+
+fn is_playlists(m: &Value) -> bool {
+    m["type"] == "playlists"
+}
+
+fn tracks_of(m: &Value, i: usize) -> Vec<String> {
+    m["playlists"][i]["track_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t.as_str().unwrap().to_string())
+        .collect()
+}
+
+async fn api_playlists(addr: &str) -> Value {
+    let r = http(addr, "GET /api/playlists HTTP/1.1").await;
+    assert!(r.starts_with("HTTP/1.1 200"), "{r}");
+    serde_json::from_str(r.split("\r\n\r\n").nth(1).unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn playlists_migrate_crud_queue_and_persist() {
+    let (addr, dir) = start_in(pre_playlists_dir("plcrud")).await;
+    // Connect order: welcome, chat_history, library, playlists, state.
+    let mut ws = connect(&addr, "Toby").await;
+    assert_eq!(next_json(&mut ws).await["type"], "welcome");
+    assert_eq!(next_json(&mut ws).await["type"], "chat_history");
+    assert_eq!(next_json(&mut ws).await["type"], "library");
+    assert_eq!(
+        next_json(&mut ws).await,
+        json!({ "type": "playlists", "playlists": [] })
+    );
+    assert_eq!(next_json(&mut ws).await["type"], "state");
+    wait_for(&mut ws, |m| is_chat(m, "event", "Toby", "joined")).await;
+
+    send(
+        &mut ws,
+        json!({ "type": "playlist_create", "name": "  Road trip ", "track_ids": [A, "nope", B] }),
+    )
+    .await;
+    let m = wait_for(&mut ws, is_playlists).await;
+    let p = &m["playlists"][0];
+    assert_eq!(p["name"], "Road trip");
+    assert_eq!(p["created_by"], "Toby");
+    assert_eq!(p["source_list_id"], Value::Null);
+    assert!(p["created_at"].as_u64().unwrap() > 1_700_000_000_000);
+    assert_eq!(tracks_of(&m, 0), [A, B], "unknown ids skipped");
+    let id = p["id"].clone();
+    wait_for(&mut ws, |m| {
+        is_chat(m, "event", "Toby", "created playlist Road trip")
+    })
+    .await;
+
+    send(
+        &mut ws,
+        json!({ "type": "playlist_add", "id": id, "track_ids": [C, A] }),
+    )
+    .await;
+    let m = wait_for(&mut ws, is_playlists).await;
+    assert_eq!(tracks_of(&m, 0), [A, B, C, A], "duplicates allowed");
+    send(
+        &mut ws,
+        json!({ "type": "playlist_move", "id": id, "from": 0, "to": 2 }),
+    )
+    .await;
+    let m = wait_for(&mut ws, is_playlists).await;
+    assert_eq!(tracks_of(&m, 0), [B, C, A, A]);
+    send(
+        &mut ws,
+        json!({ "type": "playlist_move", "id": id, "from": 3, "to": 99 }),
+    )
+    .await;
+    let m = wait_for(&mut ws, is_playlists).await;
+    assert_eq!(tracks_of(&m, 0), [B, C, A, A], "to is clamped");
+    send(
+        &mut ws,
+        json!({ "type": "playlist_remove", "id": id, "index": 1 }),
+    )
+    .await;
+    let m = wait_for(&mut ws, is_playlists).await;
+    assert_eq!(tracks_of(&m, 0), [B, A, A]);
+    send(
+        &mut ws,
+        json!({ "type": "playlist_rename", "id": id, "name": "Drive" }),
+    )
+    .await;
+    wait_for(&mut ws, |m| {
+        is_chat(m, "event", "Toby", "renamed playlist Road trip to Drive")
+    })
+    .await;
+
+    send(
+        &mut ws,
+        json!({ "type": "playlist_queue", "id": id, "shuffle": false }),
+    )
+    .await;
+    let st = wait_for(&mut ws, |m| m["type"] == "state").await;
+    assert_eq!(
+        st["state"]["current"]["track"]["id"], B,
+        "idle station starts"
+    );
+    assert_eq!(st["state"]["current"]["added_by"], "Toby");
+    assert_eq!(queue_ids(&st["state"]), [A, A]);
+    wait_for(&mut ws, |m| {
+        is_chat(m, "event", "Toby", "queued playlist Drive (3 songs)")
+    })
+    .await;
+    send(
+        &mut ws,
+        json!({ "type": "playlist_queue", "id": id, "shuffle": true }),
+    )
+    .await;
+    let st = wait_for(&mut ws, |m| m["type"] == "state").await;
+    let mut q = queue_ids(&st["state"]);
+    assert_eq!(q.len(), 5);
+    q.sort();
+    assert_eq!(q, [A, A, A, A, B]);
+    wait_for(&mut ws, |m| {
+        is_chat(m, "event", "Toby", "shuffled playlist Drive (3 songs)")
+    })
+    .await;
+
+    // Newest-updated first.
+    send(
+        &mut ws,
+        json!({ "type": "playlist_create", "name": "Empty" }),
+    )
+    .await;
+    let m = wait_for(&mut ws, is_playlists).await;
+    assert_eq!(m["playlists"][0]["name"], "Empty");
+    assert_eq!(m["playlists"][1]["name"], "Drive");
+    let api = api_playlists(&addr).await;
+    assert_eq!(api, m["playlists"]);
+
+    // Survives a restart on the same DB.
+    let addr2 = start_in(dir.clone()).await.0;
+    assert_eq!(api_playlists(&addr2).await, m["playlists"]);
+
+    // A new connection (fresh action budget) deletes one.
+    let (mut b, _) = join(&addr, "Ann").await;
+    send(&mut b, json!({ "type": "playlist_delete", "id": id })).await;
+    let m = wait_for(&mut b, is_playlists).await;
+    assert_eq!(m["playlists"].as_array().unwrap().len(), 1);
+    wait_for(&mut b, |m| {
+        is_chat(m, "event", "Ann", "deleted playlist Drive")
+    })
+    .await;
+    let addr3 = start_in(dir.clone()).await.0;
+    let after = api_playlists(&addr3).await;
+    assert_eq!(after.as_array().unwrap().len(), 1);
+    assert_eq!(after[0]["name"], "Empty");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn playlist_errors_and_limits() {
+    let dir = pre_playlists_dir("plerr");
+    start_in(dir.clone()).await; // creates the tables
+    {
+        let db = rusqlite::Connection::open(dir.join("db.sqlite")).unwrap();
+        // 100 playlists: #1 holds one song, #2 is full (500), #3 is empty.
+        for i in 1..=100 {
+            db.execute(
+                "INSERT INTO playlists VALUES (?1, ?2, 'zed', 1, ?1, NULL)",
+                rusqlite::params![i, format!("P{i}")],
+            )
+            .unwrap();
+        }
+        db.execute("INSERT INTO playlist_tracks VALUES (1, 0, ?1)", [A])
+            .unwrap();
+        for pos in 0..500 {
+            db.execute(
+                "INSERT INTO playlist_tracks VALUES (2, ?1, ?2)",
+                rusqlite::params![pos, B],
+            )
+            .unwrap();
+        }
+    }
+    let (addr, dir) = start_in(dir).await;
+
+    let bad_name = "Playlist name must be 1–60 characters";
+    let long = "x".repeat(61);
+    let cases = [
+        (
+            json!({ "type": "playlist_create", "name": "ok" }),
+            "Too many playlists",
+        ),
+        (
+            json!({ "type": "playlist_create", "name": "   " }),
+            bad_name,
+        ),
+        (
+            json!({ "type": "playlist_rename", "id": 1, "name": long }),
+            bad_name,
+        ),
+        (
+            json!({ "type": "playlist_rename", "id": 999, "name": "x" }),
+            "Unknown playlist",
+        ),
+        (
+            json!({ "type": "playlist_delete", "id": 999 }),
+            "Unknown playlist",
+        ),
+        (
+            json!({ "type": "playlist_add", "id": 999, "track_ids": [A] }),
+            "Unknown playlist",
+        ),
+        (
+            json!({ "type": "playlist_add", "id": 2, "track_ids": [A] }),
+            "Playlist is full",
+        ),
+        (
+            json!({ "type": "playlist_add", "id": 1, "track_ids": ["nope"] }),
+            "Unknown track",
+        ),
+        (
+            json!({ "type": "playlist_remove", "id": 999, "index": 0 }),
+            "Unknown playlist",
+        ),
+        (
+            json!({ "type": "playlist_remove", "id": 1, "index": 1 }),
+            "No such song in that playlist",
+        ),
+        (
+            json!({ "type": "playlist_move", "id": 999, "from": 0, "to": 0 }),
+            "Unknown playlist",
+        ),
+        (
+            json!({ "type": "playlist_move", "id": 1, "from": 5, "to": 0 }),
+            "No such song in that playlist",
+        ),
+        (
+            json!({ "type": "playlist_queue", "id": 999, "shuffle": false }),
+            "Unknown playlist",
+        ),
+        (
+            json!({ "type": "playlist_queue", "id": 3, "shuffle": true }),
+            "That playlist is empty",
+        ),
+        (
+            json!({ "type": "playlist_create", "name": "y".repeat(60) }),
+            "Too many playlists",
+        ),
+    ];
+    // Errors count against the action limiter (10 / 5 s), so spread them over connections.
+    for chunk in cases.chunks(5) {
+        let (mut ws, _) = join(&addr, "Toby").await;
+        for (msg, err) in chunk {
+            send(&mut ws, msg.clone()).await;
+            let m = wait_for(&mut ws, |m| m["type"] == "error").await;
+            assert_eq!(m["message"], *err, "{msg}");
+        }
+    }
+
+    // Every playlist message counts against the per-connection action limiter.
+    let (mut ws, _) = join(&addr, "Flood").await;
+    for i in 0..12 {
+        send(
+            &mut ws,
+            json!({ "type": "playlist_rename", "id": 1, "name": format!("R{i}") }),
+        )
+        .await;
+    }
+    send(&mut ws, json!({ "type": "ping", "t0": 1.0 })).await;
+    let (mut renamed, quiet) = (0, std::time::Duration::from_millis(300));
+    while let Ok(m) = tokio::time::timeout(quiet, next_json(&mut ws)).await {
+        assert_ne!(m["type"], "error", "{m}");
+        if m["type"] == "chat"
+            && m["message"]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("renamed")
+        {
+            renamed += 1;
+        }
+    }
+    assert_eq!(renamed, 10);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn playlist_queue_stops_at_the_queue_cap() {
+    let dir = pre_playlists_dir("plqcap");
+    start_in(dir.clone()).await;
+    {
+        let db = rusqlite::Connection::open(dir.join("db.sqlite")).unwrap();
+        for i in 1..=199 {
+            db.execute(
+                "INSERT INTO queue VALUES (?1, ?2, 'zed', ?1)",
+                rusqlite::params![i, A],
+            )
+            .unwrap();
+        }
+        db.execute(
+            r#"INSERT INTO station VALUES ('current', '{"queue_id":500,"track_id":"aaaaaaaaaaa","added_by":"zed"}')"#,
+            [],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO playlists VALUES (7, 'Five', 'zed', 1, 1, NULL)",
+            [],
+        )
+        .unwrap();
+        for (pos, t) in [B, C, A, B, C].iter().enumerate() {
+            db.execute(
+                "INSERT INTO playlist_tracks VALUES (7, ?1, ?2)",
+                rusqlite::params![pos, t],
+            )
+            .unwrap();
+        }
+    }
+    let (addr, dir) = start_in(dir).await;
+    let (mut ws, _) = join(&addr, "Toby").await;
+    send(
+        &mut ws,
+        json!({ "type": "playlist_queue", "id": 7, "shuffle": false }),
+    )
+    .await;
+    // The notice is a direct reply, so it may overtake the state broadcast.
+    let (mut st, mut notice) = (Value::Null, Value::Null);
+    while st.is_null() || notice.is_null() {
+        let m = wait_for(&mut ws, |m| m["type"] == "state" || m["type"] == "error").await;
+        if m["type"] == "state" {
+            st = m;
+        } else {
+            notice = m;
+        }
+    }
+    assert_eq!(queue_ids(&st["state"]).len(), 200);
+    assert_eq!(queue_ids(&st["state"])[199], B, "the first song fit");
+    assert_eq!(notice["message"], "Queued 1 of 5, queue is full");
+    wait_for(&mut ws, |m| {
+        is_chat(m, "event", "Toby", "queued playlist Five (1 song)")
+    })
+    .await;
+    send(
+        &mut ws,
+        json!({ "type": "playlist_queue", "id": 7, "shuffle": true }),
+    )
+    .await;
+    assert_eq!(
+        wait_for(&mut ws, |m| m["type"] == "error").await["message"],
+        "Queue is full"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A YouTube import saves a playlist keyed by its list id; downloads land in YouTube order;
+/// failed ones are absent; re-importing updates the same playlist (keeping a rename).
+#[tokio::test]
+async fn playlist_import_auto_saves_and_reimport_updates() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = fresh_dir("plsave");
+    let music = dir.join("music");
+    std::fs::create_dir_all(&music).unwrap();
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/flat_playlist.json"
+    );
+    // Downloads: hiu9WSl4OKg fails; the rest "download" at once (an empty mp3 + info JSON).
+    let script = dir.join("fake-yt-dlp");
+    let body = r#"#!/bin/sh
+[ "$1" = --flat-playlist ] && exec cat FIXTURE
+for a; do url=$a; done
+id=${url##*v=}
+[ "$id" = hiu9WSl4OKg ] && { echo 'ERROR: unavailable' >&2; exit 1; }
+: > MUSIC/$id.mp3
+echo "{\"id\":\"$id\",\"title\":\"T $id\",\"duration\":60}"
+"#
+    .replace("FIXTURE", fixture)
+    .replace("MUSIC", &music.display().to_string());
+    std::fs::write(&script, body).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    {
+        let db = rusqlite::Connection::open(dir.join("db.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TABLE tracks(id TEXT PRIMARY KEY, title TEXT NOT NULL,
+                 duration_ms INTEGER NOT NULL, thumbnail INTEGER NOT NULL,
+                 added_by TEXT NOT NULL, added_at INTEGER NOT NULL, gain_db REAL);
+             INSERT INTO tracks VALUES ('NOaZVn2ML44', 'Good intro', 16000, 0, 'ann', 1, 0),
+                                       ('TbSwCoThlbo', 'Awesome intro', 15000, 0, 'ann', 2, 0);",
+        )
+        .unwrap();
+    }
+    let (addr, dir) = start_with(dir, |c| c.ytdlp = script.display().to_string()).await;
+    let (mut ws, _) = join(&addr, "Toby").await;
+    let list = "PLKM3pENfZPOLCUSim2fut61AWCp9AUrQU";
+    let url = format!("https://www.youtube.com/playlist?list={list}");
+    send(&mut ws, json!({ "type": "add", "url": url })).await;
+    let m = wait_for(&mut ws, is_playlists).await;
+    let p = &m["playlists"][0];
+    assert_eq!(p["name"], "10 sec Intro Music");
+    assert_eq!(p["source_list_id"], list);
+    assert_eq!(p["created_by"], "Toby");
+    assert_eq!(
+        tracks_of(&m, 0),
+        ["NOaZVn2ML44", "TbSwCoThlbo"],
+        "cached first"
+    );
+    let id = p["id"].clone();
+    let done = ["NOaZVn2ML44", "9MnGSJYyR8Q", "TbSwCoThlbo", "lhYmGBmO0bs"];
+    let m = wait_for(&mut ws, |m| is_playlists(m) && tracks_of(m, 0) == done).await;
+    assert_eq!(m["playlists"].as_array().unwrap().len(), 1);
+
+    // Someone renames and trims it; a re-import refreshes the songs but keeps the name and id.
+    send(
+        &mut ws,
+        json!({ "type": "playlist_rename", "id": id, "name": "Intros" }),
+    )
+    .await;
+    send(
+        &mut ws,
+        json!({ "type": "playlist_remove", "id": id, "index": 0 }),
+    )
+    .await;
+    wait_for(&mut ws, |m| is_playlists(m) && tracks_of(m, 0).len() == 3).await;
+    send(&mut ws, json!({ "type": "add", "url": url })).await;
+    let m = wait_for(&mut ws, |m| is_playlists(m) && tracks_of(m, 0) == done).await;
+    let all = m["playlists"].as_array().unwrap();
+    assert_eq!(all.len(), 1, "no duplicate");
+    assert_eq!(all[0]["id"], id);
+    assert_eq!(all[0]["name"], "Intros");
     let _ = std::fs::remove_dir_all(dir);
 }
