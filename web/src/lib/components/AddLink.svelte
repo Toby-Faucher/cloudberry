@@ -3,28 +3,18 @@
 	import { fly, fade } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { dur } from '#lib/util.ts';
-	import Icon from './Icon.svelte';
+	import { CircleAlert, Check, Plus } from '@lucide/svelte';
+	import { dur, isYouTubeUrl } from '#lib/util.ts';
 
 	let { station }: { station: Station } = $props();
 	let url = $state('');
 	let invalid = $state(false);
 
-	// Same hosts the server accepts; the server re-validates, this just gives instant feedback.
-	const HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'];
-	function looksValid(v: string) {
-		try {
-			return HOSTS.includes(new URL(v).hostname);
-		} catch {
-			return false;
-		}
-	}
-
 	function submit(e: SubmitEvent) {
 		e.preventDefault();
 		const v = url.trim();
 		if (!v) return;
-		if (!looksValid(v)) {
+		if (!isYouTubeUrl(v)) {
 			invalid = true;
 			return;
 		}
@@ -49,7 +39,7 @@
 			oninput={() => (invalid = false)}
 		/>
 		<button type="submit" disabled={!url.trim()}>
-			<Icon name="plus" size={16} /> Add
+			<Plus size={16} /> Add
 		</button>
 	</form>
 	{#if invalid}
@@ -66,8 +56,7 @@
 					out:fade={{ duration: dur(200) }}
 				>
 					<span class="state">
-						{#if job.status === 'done'}<Icon name="check" size={14} />{:else if job.status === 'failed'}<Icon
-								name="alert"
+						{#if job.status === 'done'}<Check size={14} strokeWidth={2.5} />{:else if job.status === 'failed'}<CircleAlert
 								size={14}
 							/>{:else}<span class="spinner"></span>{/if}
 					</span>

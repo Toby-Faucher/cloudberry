@@ -4,7 +4,8 @@
 	import { flip } from 'svelte/animate';
 	import { backOut } from 'svelte/easing';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { dur, hue, initials } from '#lib/util.ts';
+	import { dur } from '#lib/util.ts';
+	import Avatar from './Avatar.svelte';
 
 	let { station }: { station: Station } = $props();
 	const listeners = $derived(station.state?.listeners ?? []);
@@ -19,12 +20,8 @@
 				out:scale={{ start: 0.6, duration: dur(180) }}
 			>
 				<Tooltip.Root>
-					<Tooltip.Trigger
-						class={['avatar', l.id === station.you && 'me']}
-						style="--h: {hue(l.name)}"
-						aria-label={l.id === station.you ? `${l.name} (you)` : l.name}
-					>
-						{initials(l.name)}
+					<Tooltip.Trigger class="who" aria-label={l.id === station.you ? `${l.name} (you)` : l.name}>
+						<Avatar name={l.name} me={l.id === station.you} />
 					</Tooltip.Trigger>
 					<Tooltip.Portal>
 						<Tooltip.Content sideOffset={8} class="cb-tip">
@@ -53,33 +50,16 @@
 	li + li {
 		margin-left: -8px;
 	}
-	ul :global(.avatar) {
+	ul :global(.who) {
 		display: grid;
-		place-items: center;
-		width: 32px;
-		height: 32px;
 		border-radius: 50%;
-		font-size: 0.72rem;
-		font-weight: 600;
-		letter-spacing: 0.02em;
-		color: oklch(0.32 0.08 var(--h));
-		background: oklch(0.88 0.07 var(--h));
 		border: 2px solid var(--bg);
 		cursor: default;
 		transition: transform 160ms var(--ease-out);
 	}
-	ul :global(.avatar.me) {
-		box-shadow: 0 0 0 2px var(--accent);
-	}
 	@media (hover: hover) {
-		ul :global(.avatar:hover) {
+		ul :global(.who:hover) {
 			transform: translateY(-2px);
-		}
-	}
-	@media (prefers-color-scheme: dark) {
-		ul :global(.avatar) {
-			color: oklch(0.9 0.06 var(--h));
-			background: oklch(0.38 0.07 var(--h));
 		}
 	}
 	.count {
