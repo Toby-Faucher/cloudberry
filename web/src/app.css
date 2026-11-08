@@ -43,12 +43,13 @@
 	--accent-soft: #fbe3cf;
 	--led: #ff6a13; /* lit LED; always paired with a shape/label, never colour alone */
 	--led-off: #c4c4be;
+	--led-rim: #b84d00; /* 1px rim so a lit lamp clears 3:1 on the light faces */
 	--on-accent: #151515;
 	--blush: var(--blush-500);
 	--ok: var(--ink);
 	--warn: var(--berry-700);
-	--bad: #c02f17;
-	--danger: #c02f17;
+	--bad: #b02a12;
+	--danger: #b02a12;
 
 	/* Depth: rules first. Only things lifted off the panel (drag clone, dialogs) get a shadow. */
 	--shadow-lift: 0 10px 24px -10px rgb(0 0 0 / 0.28), 0 2px 6px -2px rgb(0 0 0 / 0.12);
@@ -95,10 +96,11 @@
 		--ink-2: #b3b3ac;
 		--ink-3: #94948d;
 		--line: #2c2c2a;
-		--line-2: #6c6c66;
+		--line-2: #76766f;
 		--accent-hover: var(--berry-400);
 		--accent-soft: #3a2513;
 		--led-off: #3a3a37;
+		--led-rim: var(--led);
 		--bad: #ff7a5c;
 		--danger: #ff7a5c;
 		--shade: #050505;
@@ -215,7 +217,7 @@ html {
 }
 .led.on {
 	background: var(--led);
-	box-shadow: 0 0 0 2px color-mix(in oklab, var(--led) 22%, transparent);
+	box-shadow: inset 0 0 0 1px var(--led-rim);
 }
 .led.blink {
 	animation: led-blink 1s steps(1, end) infinite;

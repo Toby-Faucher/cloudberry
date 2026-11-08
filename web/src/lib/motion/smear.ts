@@ -360,7 +360,7 @@ export const smear = { track, untrack };
 
 let sprite: HTMLCanvasElement | null = null;
 
-/** One cloudberry drawn once at 64 px: a cluster of amber drupelets, highlights, green sepals. */
+/** One cloudberry drawn once at 64 px: flat drupelet discs in two oranges, like the brand mark. */
 function berrySprite(): HTMLCanvasElement {
 	if (sprite) return sprite;
 	const c = document.createElement('canvas');
@@ -368,50 +368,24 @@ function berrySprite(): HTMLCanvasElement {
 	const g = c.getContext('2d')!;
 	g.translate(32, 34);
 	const R = 24; // berry radius
-	// Sepals peeking out behind the top.
-	g.fillStyle = '#5E8C3A';
-	for (const ang of [-2.2, -1.57, -0.95]) {
-		g.save();
-		g.rotate(ang + Math.PI / 2);
-		g.beginPath();
-		g.ellipse(0, -R * 0.95, 4, 11, 0, 0, TAU);
-		g.fill();
-		g.restore();
-	}
-	// Drupelets back to front: outer ring (shadowed), middle ring, centre.
-	const rings: [number, number, number, string, string][] = [
-		[11, 0.7, 0.3, '#F0912B', '#A9550F'],
-		[6, 0.36, 0.5, '#F7AE4A', '#D9741A'],
-		[1, 0, 0, '#FBC77A', '#F0912B']
+	// Drupelets back to front: outer ring, middle ring, centre. Flat fills, no gloss.
+	const rings: [number, number, number, string][] = [
+		[11, 0.7, 0.3, '#E2701A'],
+		[6, 0.36, 0.5, '#F28322'],
+		[1, 0, 0, '#FF9A4D']
 	];
-	const dr = R * 0.32;
-	for (const [count, dist, phase, light, dark] of rings) {
+	const dr = R * 0.3;
+	for (const [count, dist, phase, fill] of rings) {
+		g.fillStyle = fill;
 		for (let i = 0; i < count; i++) {
 			const ang = phase + (i / count) * TAU;
-			const x = Math.cos(ang) * dist * R, y = Math.sin(ang) * dist * R;
-			const grad = g.createRadialGradient(x - dr * 0.35, y - dr * 0.4, dr * 0.1, x, y, dr);
-			grad.addColorStop(0, light);
-			grad.addColorStop(1, dark);
-			g.fillStyle = grad;
 			g.beginPath();
-			g.arc(x, y, dr, 0, TAU);
-			g.fill();
-			// Glossy pip on each drupelet.
-			g.fillStyle = 'rgba(255, 248, 230, 0.75)';
-			g.beginPath();
-			g.arc(x - dr * 0.35, y - dr * 0.4, dr * 0.22, 0, TAU);
+			g.arc(Math.cos(ang) * dist * R, Math.sin(ang) * dist * R, dr, 0, TAU);
 			g.fill();
 		}
 	}
-	// Soft sheen across the upper left of the whole berry.
-	const sheen = g.createRadialGradient(-R * 0.4, -R * 0.45, 0, -R * 0.4, -R * 0.45, R * 0.8);
-	sheen.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
-	sheen.addColorStop(1, 'rgba(255, 255, 255, 0)');
-	g.fillStyle = sheen;
-	g.beginPath();
-	g.arc(0, 0, R, 0, TAU);
-	g.fill();
 	return (sprite = c);
+
 }
 
 let raining: Promise<void> | null = null;

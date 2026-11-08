@@ -1,0 +1,55 @@
+{
+	"schemaVersion": 2,
+	"generatedAt": "2026-11-07T20:10:00Z",
+	"title": "Design System: Cloudberry",
+	"extensions": {
+		"colorMeta": {
+			"cloudberry-orange": { "role": "primary", "displayName": "Cloudberry Orange", "canonical": "#f28322", "tonalRamp": ["#3d1c02", "#6b3205", "#a34400", "#e2701a", "#f28322", "#ff9d55", "#ffbe85", "#fbe3cf"] },
+			"lamp-orange": { "role": "primary", "displayName": "Lamp Orange", "canonical": "#ff6a13" },
+			"blush": { "role": "tertiary", "displayName": "Unripe Blush (heat)", "canonical": "#e0553a" },
+			"chassis": { "role": "neutral", "displayName": "Aluminium Chassis", "canonical": "#e3e3df", "tonalRamp": ["#111111", "#191918", "#262624", "#45453f", "#84847e", "#cdcdc7", "#e3e3df", "#fbfbf9"] },
+			"graphite": { "role": "neutral", "displayName": "Graphite", "canonical": "#151515" }
+		},
+		"typographyMeta": {
+			"title": { "displayName": "Title", "purpose": "Now-playing title and the title-card slab." },
+			"label": { "displayName": "Printed label", "purpose": "Module and control labels, uppercase condensed mono." },
+			"data": { "displayName": "Data", "purpose": "Every number: durations, times, counts, list indices." },
+			"readout": { "displayName": "Dot-matrix readout", "purpose": "Elapsed time and countdown only." }
+		},
+		"shadows": [
+			{ "name": "lift", "value": "0 10px 24px -10px rgb(0 0 0 / 0.28), 0 2px 6px -2px rgb(0 0 0 / 0.12)", "purpose": "Only for objects lifted off the panel: drag clone, toasts, dialogs, title card, chat sheet." },
+			{ "name": "key-lip", "value": "inset 0 0 0 1px var(--line), 0 1px 0 var(--key-edge)", "purpose": "Raised key cap; collapses to 0 on press." }
+		],
+		"motion": [
+			{ "name": "ease-out", "value": "cubic-bezier(0.2, 0.9, 0.1, 1)", "purpose": "State transitions; fast out, no overshoot." },
+			{ "name": "key-press", "value": "scale 0.96 in 50ms outQuad, back in 140ms outQuart", "purpose": "Every button (installPress)." },
+			{ "name": "lamp-blink", "value": "1s steps(1, end) infinite", "purpose": "Tuning / pending lamps." },
+			{ "name": "digit-roll", "value": "y -9px→0, 160ms outQuart", "purpose": "Countdown digits each second." }
+		],
+		"breakpoints": [
+			{ "name": "phone", "value": "560px" },
+			{ "name": "stack", "value": "880px" },
+			{ "name": "dock", "value": "1180px" }
+		]
+	},
+	"components": [
+		{ "name": "Play key", "kind": "button", "refersTo": "key-play", "description": "The one orange key: play/pause for everyone.", "html": "<button class=\"ds-play\" aria-label=\"Play\"><svg viewBox=\"0 0 24 24\" width=\"24\" height=\"24\"><path d=\"M7 5v14l11.5-7Z\" fill=\"currentColor\"/></svg></button>", "css": ".ds-play{width:88px;height:56px;display:grid;place-items:center;border:0;border-radius:4px;background:#f28322;color:#151515;box-shadow:0 2px 0 #8a4a13;transition:translate 60ms linear,box-shadow 60ms linear}.ds-play:hover{background:#e2701a}.ds-play:active{translate:0 2px;box-shadow:0 0 0 #8a4a13}.ds-play:focus-visible{outline:2px solid #f28322;outline-offset:2px}" },
+		{ "name": "Key", "kind": "button", "refersTo": "key", "description": "Off-white key cap with a 1px lip.", "html": "<button class=\"ds-key\" aria-label=\"Skip\"><svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\"><path d=\"M5 5.5v13l9.5-6.5Z\" fill=\"currentColor\"/><path d=\"M16.5 5h2.75v14H16.5Z\" fill=\"currentColor\"/></svg></button>", "css": ".ds-key{width:56px;height:56px;display:grid;place-items:center;border:0;border-radius:4px;background:#fbfbf9;color:#151515;box-shadow:inset 0 0 0 1px #cdcdc7,0 1px 0 #b4b4ae}.ds-key:active{translate:0 1px;box-shadow:inset 0 0 0 1px #cdcdc7}.ds-key:focus-visible{outline:2px solid #f28322;outline-offset:2px}" },
+		{ "name": "Add slot", "kind": "input", "refersTo": "input-slot", "description": "Field with a printed tag and a graphite key.", "html": "<form class=\"ds-slot\"><span class=\"ds-tag\">LINK</span><input placeholder=\"Drop a YouTube link\"><button>Add</button></form>", "css": ".ds-slot{display:flex;height:52px;padding:5px 5px 5px 0;border-radius:4px;background:#fbfbf9;box-shadow:inset 0 0 0 1px #84847e}.ds-slot:focus-within{box-shadow:inset 0 0 0 1px #151515}.ds-tag{display:grid;place-items:center;padding:0 14px;border-right:1px solid #cdcdc7;font:500 11px 'Martian Mono Variable',monospace;letter-spacing:.06em;color:#5f5f59}.ds-slot input{flex:1;border:0;background:none;padding:0 8px;outline:none}.ds-slot button{border:0;border-radius:2px;padding:0 16px;background:#151515;color:#f3f3f0;font-weight:600}" },
+		{ "name": "Lamp label", "kind": "chip", "description": "LED + printed label.", "html": "<span class=\"ds-lamp\"><i></i>ON AIR</span>", "css": ".ds-lamp{display:inline-flex;align-items:center;gap:7px;font:500 11px 'Martian Mono Variable',monospace;letter-spacing:.06em;color:#151515}.ds-lamp i{width:6px;height:6px;border-radius:50%;background:#ff6a13;box-shadow:inset 0 0 0 1px #b84d00}" },
+		{ "name": "Toast", "kind": "custom", "refersTo": "toast", "description": "Graphite strip with an orange Undo key.", "html": "<div class=\"ds-toast\">Removed “Bright Fifths”<button>UNDO</button></div>", "css": ".ds-toast{display:inline-flex;align-items:center;gap:12px;padding:6px 6px 6px 16px;border-radius:4px;background:#151515;color:#f3f3f0;font-size:14px}.ds-toast button{border:0;height:36px;padding:0 12px;border-radius:2px;background:#f28322;color:#151515;font:500 11px 'Martian Mono Variable',monospace;letter-spacing:.06em}" }
+	],
+	"narrative": {
+		"northStar": "The Desk Radio Faceplate",
+		"overview": "Cloudberry is drawn as the faceplate of a small hardware radio in the Teenage Engineering / Nothing tradition: aluminium-grey chassis, one raised deck, ruled lists, one hot orange. The world lends type, palette, density and the physical key/readout move, never costume.",
+		"keyCharacteristics": ["One raised object (the deck)", "Graphite on grey, one orange", "Grotesk + condensed mono + dot-matrix readouts", "1.75-stroke square-terminal pictograms", "Mechanical motion, no bounce"],
+		"rules": [
+			{ "name": "The One Orange Rule", "body": "Orange marks what is live, yours, or the next action. Otherwise graphite.", "section": "colors" },
+			{ "name": "The Labelled Lamp Rule", "body": "A lamp never carries meaning alone; it sits beside a word.", "section": "colors" },
+			{ "name": "The Printed Label Rule", "body": "Uppercase mono labels name a module or control; the label is the heading, never an eyebrow above one.", "section": "typography" },
+			{ "name": "The Lip Not Drop Rule", "body": "Raised means a 1–2px lower lip in the key's own darker tone; no offset block shadows or glows.", "section": "elevation" }
+		],
+		"dos": ["Do keep orange to live/yours/next-action elements.", "Do set numbers in mono with tabular figures.", "Do separate modules with 1px rules and tone.", "Do keep motion 50–360ms with no overshoot."],
+		"donts": ["Don't bring back stickers, die-cuts, offset drops, tilts, bog green, cream or Fredoka.", "Don't use emoji or a stock icon library.", "Don't add costume hardware.", "Don't use outBack/outElastic eases."]
+	}
+}

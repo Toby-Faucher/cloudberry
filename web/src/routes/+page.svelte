@@ -299,6 +299,8 @@
 	}
 	.foot {
 		margin: 0;
+		max-width: 400px;
+		text-align: center;
 		font-family: var(--font-mono);
 		font-stretch: 87.5%;
 		font-size: 0.6875rem;

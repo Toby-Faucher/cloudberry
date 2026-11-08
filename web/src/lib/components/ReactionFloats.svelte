@@ -49,7 +49,7 @@
 	}
 	.float {
 		position: absolute;
-		bottom: 6%;
+		bottom: 15%;
 		left: calc(14% + var(--x) * 64%);
 	}
 	.fly {
@@ -88,7 +88,7 @@
 	.layer > .tag {
 		position: absolute;
 		left: 12px;
-		bottom: 12px;
+		bottom: 56px; /* above the screen's soft keys */
 	}
 	.layer > .tag .chip {
 		width: 24px;

@@ -22,7 +22,7 @@
 	let unseen = $state(0);
 	let atBottom = true;
 
-	const clock = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+	const clock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); // a log reads in 24 h
 	const time = (at: number) => clock.format(at);
 	const isMine = (m: ChatMessage) => m.kind === 'user' && m.name === station.name;
 
@@ -341,6 +341,7 @@
 		width: 6px;
 		height: 6px;
 		background: var(--accent);
+		box-shadow: inset 0 0 0 1px var(--led-rim);
 	}
 	.mine .who {
 		color: var(--accent-ink);

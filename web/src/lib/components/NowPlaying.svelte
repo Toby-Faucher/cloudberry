@@ -14,6 +14,7 @@
 	import { MODES, setLean, setMode } from '#lib/visualizer/state.svelte.ts';
 	import Berry from './Berry.svelte';
 	import HoldSkip from './HoldSkip.svelte';
+	import DotTime from './DotTime.svelte';
 	import ComboMeter from './ComboMeter.svelte';
 	import { smearAnimate } from '#lib/motion/motion.ts';
 
@@ -82,14 +83,14 @@
 	function artIn(el: HTMLElement) {
 		if (ready) smearAnimate(el, { x: [120, 0], opacity: [0, 1], duration: 380, delay: 60, ease: 'outQuart' });
 	}
-	function artOut() {
+	function artOut(_n: Element) {
 		return {
 			duration: dur(180),
 			css: (t: number) => `opacity:${t};translate:${(t - 1) * 80}px 0`
 		};
 	}
 
-	function trackIn() {
+	function trackIn(_n: Element) {
 		return {
 			duration: dur(300),
 			delay: dur(60),
@@ -99,7 +100,7 @@
 			}
 		};
 	}
-	function trackOut() {
+	function trackOut(_n: Element) {
 		return {
 			duration: dur(160),
 			css: (t: number) => `opacity:${t};transform:translateY(${(t - 1) * 6}px)`
@@ -134,6 +135,19 @@
 		</div>
 		<ReactionFloats {station} />
 		<ComboMeter {station} />
+		<!-- Soft keys along the bottom of the screen: visualizer style + lean-back. -->
+		<div class="modes">
+			<div class="seg" role="group" aria-label="Visualizer style">
+				{#each MODES as m (m)}
+					<button class="seg-btn" aria-pressed={viz.mode === m} onclick={() => setMode(m)}>
+						<span class="led" class:on={viz.mode === m}></span>{MODE_LABEL[m] ?? m}
+					</button>
+				{/each}
+			</div>
+			<button class="seg-btn lean" onclick={() => setLean(true)} aria-label="Lean back (F)" title="Lean back (F)">
+				<Icon name="expand" size={16} />
+			</button>
+		</div>
 	</div>
 
 	<div class="meta stack">
@@ -155,7 +169,7 @@
 	<Lyrics {station} />
 
 	<div class="readout">
-		<span class="elapsed num" aria-hidden="true">{fmtTime(shown)}</span>
+		<span class="elapsed" aria-hidden="true"><DotTime text={fmtTime(shown)} /></span>
 		<span class="total num" aria-hidden="true">{cur ? fmtTime(durationMs) : '0:00'}</span>
 	</div>
 	<div
@@ -223,18 +237,6 @@
 
 	{#if viz.mode === 'bars'}<div class="bars"><Visualizer mode="bars" /></div>{/if}
 
-	<div class="modes">
-		<div class="seg" role="group" aria-label="Visualizer style">
-			{#each MODES as m (m)}
-				<button class="seg-btn" aria-pressed={viz.mode === m} onclick={() => setMode(m)}>
-					<span class="led" class:on={viz.mode === m}></span>{MODE_LABEL[m] ?? m}
-				</button>
-			{/each}
-		</div>
-		<button class="key lean" onclick={() => setLean(true)} aria-label="Lean back (F)" title="Lean back (F)">
-			<Icon name="expand" size={18} />
-		</button>
-	</div>
 </section>
 
 <style>
@@ -260,14 +262,16 @@
 	/* ---------- the screen: a recessed square well; the art is the one image on the panel ---------- */
 	.screen {
 		position: relative;
-		aspect-ratio: 1;
+		isolation: isolate; /* the visualizer's z -1 layers paint above the well, not under it */
+		aspect-ratio: 1 / 0.9;
 		border-radius: var(--r-md);
 		background: var(--surface-2);
 		box-shadow: inset 0 0 0 1px var(--line);
 		overflow: hidden;
 		display: grid;
 		place-items: center;
-		container-type: inline-size;
+		container-type: size; /* has a definite size from its aspect ratio; cq units size the art */
+
 	}
 	.status {
 		position: absolute;
@@ -285,7 +289,8 @@
 	}
 	.stage {
 		position: relative; /* containing block for the visualizers; NOT a stacking context */
-		width: 78%;
+		width: min(64cqi, 66cqh);
+		margin-top: -8cqh; /* optical centre above the soft-key strip */
 	}
 	.stage :global(canvas),
 	.stage :global(.glow),
@@ -309,7 +314,7 @@
 	}
 	/* Halo rings the art: the cover turns into the label of a disc. */
 	.halo .stage {
-		width: 100%;
+		width: min(84cqi, 94cqh);
 	}
 	.halo .art-wrap {
 		border-radius: 50%;
@@ -415,7 +420,8 @@
 		left: -1px;
 		top: 0;
 		bottom: 0;
-		width: 3px;
+		width: 4px;
+		box-shadow: inset 0 0 0 1px var(--led-rim);
 		background: var(--accent);
 	}
 	.disabled .head {
@@ -550,29 +556,31 @@
 		margin: 4px 4px 0;
 	}
 
-	/* ---------- visualizer mode: a three-position switch with lamps ---------- */
+	/* ---------- visualizer mode: soft keys printed along the bottom of the screen ---------- */
 	.modes {
+		position: absolute;
+		z-index: 4;
+		left: 8px;
+		right: 8px;
+		bottom: 8px;
 		display: flex;
-		gap: 8px;
-		margin: 14px 4px 4px;
-		padding-top: 14px;
-		border-top: 1px solid var(--line);
+		border-radius: var(--r-sm);
+		background: var(--surface);
+		box-shadow: inset 0 0 0 1px var(--line);
+		overflow: hidden;
 	}
 	.seg {
 		flex: 1;
 		display: grid;
 		grid-auto-flow: column;
 		grid-auto-columns: 1fr;
-		border-radius: var(--r-md);
-		box-shadow: inset 0 0 0 1px var(--line-2);
-		overflow: hidden;
 	}
 	.seg-btn {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		gap: 7px;
-		height: 40px;
+		height: 36px;
 		font-family: var(--font-mono);
 		font-stretch: 87.5%;
 		font-size: 0.6875rem;
@@ -583,8 +591,9 @@
 			background-color 120ms var(--ease-out),
 			color 120ms var(--ease-out);
 	}
-	.seg-btn + .seg-btn {
-		border-left: 1px solid var(--line-2);
+	.seg-btn + .seg-btn,
+	.lean {
+		border-left: 1px solid var(--line);
 	}
 	.seg-btn[aria-pressed='true'] {
 		background: var(--key);
@@ -598,45 +607,24 @@
 		}
 	}
 	.lean {
-		width: 40px;
-		height: 40px;
+		width: 44px;
 	}
+
 
 	/* Phone: the screen shrinks to a thumbnail beside the title; transport in the thumb zone. */
 	@media (max-width: 560px) {
 		.now {
-			display: grid;
-			grid-template-columns: 112px minmax(0, 1fr);
-			column-gap: 14px;
-			padding: 10px;
-		}
-		.now > :global(*:not(.screen):not(.meta)) {
-			grid-column: 1 / -1;
+			padding: 8px;
 		}
 		.screen {
-			grid-row: 1;
-		}
-		.status {
-			top: 6px;
-			left: 6px;
-			padding: 3px 5px;
-			font-size: 0.5625rem;
+			aspect-ratio: 16 / 11;
 		}
 		.meta {
-			grid-row: 1;
-			padding: 2px 0 0;
+			padding-top: 14px;
 			min-height: 0;
 		}
 		.title {
-			font-size: 1.25rem;
-			-webkit-line-clamp: 3;
-			line-clamp: 3;
-		}
-		.by {
-			flex-wrap: wrap;
-			gap: 6px;
-			margin-top: 8px;
-			font-size: 0.8125rem;
+			font-size: 1.375rem;
 		}
 		.readout {
 			margin-top: 12px;

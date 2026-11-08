@@ -41,18 +41,18 @@
 <style>
 	.region {
 		position: fixed;
-		left: 50%;
+		left: 16px;
+		right: 16px;
 		bottom: max(24px, env(safe-area-inset-bottom));
 		pointer-events: none;
-		translate: -50% 0;
-		width: max-content;
-		max-width: calc(100% - 32px);
 		z-index: 70;
 		display: grid;
+		justify-items: center;
 	}
-	/* A graphite strip printed with the message; Undo is a key on its right end. */
 	.toast {
 		grid-area: 1 / 1;
+		min-width: 0;
+		max-width: 100%;
 		display: flex;
 		align-items: center;
 		gap: 12px;

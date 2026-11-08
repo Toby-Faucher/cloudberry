@@ -3,7 +3,6 @@
 	import { fly, fade } from 'svelte/transition';
 	import { quartOut } from 'svelte/easing';
 	import type { Station } from '#lib/station.svelte.ts';
-
 	import Icon from '#lib/icons/Icon.svelte';
 	import Avatar from './Avatar.svelte';
 	import { dur, isYouTubeUrl } from '#lib/util.ts';

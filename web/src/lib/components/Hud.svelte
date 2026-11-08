@@ -2,6 +2,7 @@
 	import type { Station } from '#lib/station.svelte.ts';
 	import { fmtCountdown, showCountdown, syncLevel } from '#lib/game.ts';
 	import { motion } from '#lib/motion/motion.ts';
+	import DotTime from './DotTime.svelte';
 
 	/**
 	 * Header readouts: a four-segment sync meter (quirk 5; ms on hover, focus or tap) and the
@@ -63,7 +64,7 @@
 	{#if counting && next}
 		<span class="upnext" use:slideIn>
 			<span class="label">Next in</span>
-			<span class="win"><b class="num" bind:this={digits}>{secs}</b></span>
+			<span class="win"><b bind:this={digits}><DotTime text={secs} /></b></span>
 			<span class="t">{next.track.title}</span>
 		</span>
 	{/if}
