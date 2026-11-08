@@ -47,6 +47,7 @@ pub struct QueueItem {
 pub struct Listener {
     pub id: u64,
     pub name: String,
+    pub away: bool,
 }
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq)]
@@ -82,6 +83,8 @@ pub struct Station {
     pub jobs: Vec<Job>,
     /// Last played tracks (left `current` by ending, skip or remove), newest first.
     pub history: Vec<Track>,
+    /// Whose queued tracks got the most reactions today (server local day).
+    pub dj_of_day: Option<String>,
     #[serde(skip)]
     next_id: u64,
     #[serde(skip)]
@@ -313,15 +316,72 @@ impl Shared {
     pub fn join(&self, name: String) -> u64 {
         let mut st = self.lock();
         let id = st.next_id();
-        st.listeners.push(Listener { id, name });
+        st.listeners.push(Listener {
+            id,
+            name,
+            away: false,
+        });
         self.broadcast_state(&st);
         id
     }
 
-    pub fn leave(&self, id: u64) {
+    /// Remove a listener; the last one leaving pauses the station. Returns whether it paused.
+    pub fn leave(self: &Arc<Self>, id: u64) -> bool {
+        let mut paused = false;
+        self.change(|st, now| {
+            st.listeners.retain(|l| l.id != id);
+            if st.listeners.is_empty() && st.playing {
+                st.pause(now);
+                paused = true;
+            }
+            true
+        });
+        paused
+    }
+
+    pub fn set_away(&self, id: u64, away: bool) {
         let mut st = self.lock();
-        st.listeners.retain(|l| l.id != id);
+        if let Some(l) = st.listeners.iter_mut().find(|l| l.id == id) {
+            l.away = away;
+        }
         self.broadcast_state(&st);
+    }
+
+    /// Credit a reaction to whoever queued the current track (ignored when nothing is current).
+    pub fn count_reaction(&self) {
+        let mut st = self.lock();
+        let Some(dj) = st.current.as_ref().map(|c| c.added_by.clone()) else {
+            return;
+        };
+        let db = self.db();
+        let r = db.execute(
+            "INSERT INTO reactions VALUES (date('now', 'localtime'), ?1, 1, ?2)
+                 ON CONFLICT(day, name) DO UPDATE SET count = count + 1, last_at = excluded.last_at",
+            params![dj, now_ms() as u64],
+        );
+        if let Err(e) = r {
+            tracing::error!("saving reaction: {e}");
+        }
+        let top = dj_of_day(&db);
+        drop(db);
+        if top != st.dj_of_day {
+            st.dj_of_day = top;
+            self.broadcast_state(&st);
+        }
+    }
+
+    /// Re-read today's DJ just after each local midnight.
+    pub async fn dj_rollover(self: Arc<Self>) {
+        loop {
+            let secs = secs_to_local_midnight(&self.db());
+            tokio::time::sleep(Duration::from_secs_f64(secs.max(0.0) + 1.0)).await;
+            let mut st = self.lock();
+            let top = dj_of_day(&self.db());
+            if top != st.dj_of_day {
+                st.dj_of_day = top;
+                self.broadcast_state(&st);
+            }
+        }
     }
 
     /// Queue a library track at `index` (clamped; `usize::MAX` appends) and post an event.
@@ -574,6 +634,27 @@ impl Shared {
     }
 }
 
+/// Seconds until the next local midnight (local = `TZ` env, via SQLite's `localtime`).
+fn secs_to_local_midnight(db: &Connection) -> f64 {
+    db.query_row(
+        "SELECT unixepoch(date('now', 'localtime', '+1 day'), 'utc') - unixepoch('now', 'subsec')",
+        [],
+        |r| r.get(0),
+    )
+    .unwrap_or(3600.0)
+}
+
+/// Today's (server local day) most-reacted DJ; ties go to the most recent reaction.
+fn dj_of_day(db: &Connection) -> Option<String> {
+    db.query_row(
+        "SELECT name FROM reactions WHERE day = date('now', 'localtime')
+             ORDER BY count DESC, last_at DESC LIMIT 1",
+        [],
+        |r| r.get(0),
+    )
+    .ok()
+}
+
 fn load(db: &Connection) -> rusqlite::Result<Station> {
     db.execute_batch(
         "PRAGMA journal_mode=WAL;
@@ -585,7 +666,9 @@ fn load(db: &Connection) -> rusqlite::Result<Station> {
          CREATE TABLE IF NOT EXISTS station(k TEXT PRIMARY KEY, v TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS chat(id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
              name TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
-         CREATE TABLE IF NOT EXISTS history(track_id TEXT NOT NULL, played_at INTEGER NOT NULL);",
+         CREATE TABLE IF NOT EXISTS history(track_id TEXT NOT NULL, played_at INTEGER NOT NULL);
+         CREATE TABLE IF NOT EXISTS reactions(day TEXT NOT NULL, name TEXT NOT NULL,
+             count INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY(day, name));",
     )?;
     // Phase 2 migration. NULL = not measured yet (the startup backfill looks for it).
     let has_gain: bool = db.query_row(
@@ -612,6 +695,7 @@ fn load(db: &Connection) -> rusqlite::Result<Station> {
         .collect::<rusqlite::Result<_>>()?;
     let mut st = Station {
         library,
+        dj_of_day: dj_of_day(db),
         ..Station::default()
     };
     let item = |st: &Station, queue_id: u64, track_id: &str, added_by: String| {
@@ -789,6 +873,12 @@ mod tests {
             ..Config::from_env()
         };
         (cfg, dir)
+    }
+
+    #[test]
+    fn midnight_is_within_a_day() {
+        let s = secs_to_local_midnight(&Connection::open_in_memory().unwrap());
+        assert!(s > 0.0 && s <= 25.0 * 3600.0, "{s}");
     }
 
     #[test]

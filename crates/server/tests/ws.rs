@@ -66,7 +66,11 @@ async fn websocket_flow() {
     let state = next_json(&mut ws).await;
     assert_eq!(state["type"], "state");
     let st = &state["state"];
-    assert_eq!(st["listeners"], json!([{ "id": me, "name": "Toby" }]));
+    assert_eq!(
+        st["listeners"],
+        json!([{ "id": me, "name": "Toby", "away": false }])
+    );
+    assert_eq!(st["dj_of_day"], Value::Null);
     for k in [
         "current",
         "queue",
@@ -456,5 +460,190 @@ async fn mvp_db_migrates_and_actions_emit_events() {
     // History and chat survive a restart on the same DB.
     let r = http(&start_in(dir.clone()).await.0, "GET /api/state HTTP/1.1").await;
     assert!(r.contains(r#""history":[{"id":"aaaaaaaaaaa""#), "{r}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Seeds a DB in the phase-2 schema (no `reactions` table) with three measured tracks.
+fn phase2_dir(tag: &str) -> std::path::PathBuf {
+    let dir = fresh_dir(tag);
+    std::fs::create_dir_all(dir.join("music")).unwrap();
+    let db = rusqlite::Connection::open(dir.join("db.sqlite")).unwrap();
+    db.execute_batch(
+        "CREATE TABLE tracks(id TEXT PRIMARY KEY, title TEXT NOT NULL,
+             duration_ms INTEGER NOT NULL, thumbnail INTEGER NOT NULL,
+             added_by TEXT NOT NULL, added_at INTEGER NOT NULL, gain_db REAL);
+         CREATE TABLE queue(queue_id INTEGER PRIMARY KEY, track_id TEXT NOT NULL,
+             added_by TEXT NOT NULL, position INTEGER NOT NULL);
+         CREATE TABLE station(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+         CREATE TABLE chat(id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
+             name TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
+         CREATE TABLE history(track_id TEXT NOT NULL, played_at INTEGER NOT NULL);
+         INSERT INTO tracks VALUES ('aaaaaaaaaaa', 'Song A', 600000, 0, 'zed', 1, 0),
+                                   ('bbbbbbbbbbb', 'Song B', 600000, 0, 'zed', 2, 0),
+                                   ('ccccccccccc', 'Song C', 600000, 0, 'zed', 3, 0);",
+    )
+    .unwrap();
+    dir
+}
+
+/// Connect and read up to (and including) our own "joined" event; returns our listener id.
+async fn join(addr: &str, name: &str) -> (Ws, u64) {
+    let mut ws = connect(addr, name).await;
+    let me = next_json(&mut ws).await["you"].as_u64().unwrap();
+    wait_for(&mut ws, |m| is_chat(m, "event", name, "joined")).await;
+    (ws, me)
+}
+
+fn is_dj(m: &Value, dj: Value) -> bool {
+    m["type"] == "state" && m["state"]["dj_of_day"] == dj
+}
+
+#[tokio::test]
+async fn poke_broadcasts_validates_and_rate_limits() {
+    let (addr, dir) = start("poke").await;
+    let (mut a, ia) = join(&addr, "Toby").await;
+    let (mut b, ib) = join(&addr, "Ann").await;
+    for bad in [ia, 9999] {
+        send(&mut a, json!({ "type": "poke", "listener_id": bad })).await;
+        wait_for(&mut a, |m| m["type"] == "error").await;
+    }
+    let poke = json!({ "type": "poke", "from_id": ia, "from_name": "Toby", "to_id": ib });
+    for _ in 0..3 {
+        send(&mut a, json!({ "type": "poke", "listener_id": ib })).await;
+    }
+    assert_eq!(wait_for(&mut b, |m| m["type"] == "poke").await, poke);
+    send(&mut a, json!({ "type": "ping", "t0": 1.0 })).await;
+    let (mut pokes, quiet) = (0, std::time::Duration::from_millis(300));
+    while let Ok(m) = tokio::time::timeout(quiet, next_json(&mut a)).await {
+        if m["type"] == "poke" {
+            assert_eq!(m, poke);
+            pokes += 1;
+        }
+    }
+    assert_eq!(pokes, 1, "excess pokes are dropped");
+    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+    send(&mut a, json!({ "type": "poke", "listener_id": ib })).await;
+    assert_eq!(wait_for(&mut b, |m| m["type"] == "poke").await, poke);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn presence_sets_away() {
+    let (addr, dir) = start("presence").await;
+    let (mut a, ia) = join(&addr, "Toby").await;
+    for away in [true, false] {
+        send(&mut a, json!({ "type": "presence", "away": away })).await;
+        let st = wait_for(&mut a, |m| m["type"] == "state").await;
+        assert_eq!(
+            st["state"]["listeners"],
+            json!([{ "id": ia, "name": "Toby", "away": away }])
+        );
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn last_listener_leaving_pauses() {
+    let (addr, dir) = start_in(phase2_dir("autopause")).await;
+    let (mut a, _) = join(&addr, "Toby").await;
+    let (mut b, _) = join(&addr, "Ann").await;
+    send(&mut a, json!({ "type": "enqueue", "track_id": A })).await;
+    wait_for(&mut a, |m| {
+        m["type"] == "state" && m["state"]["playing"] == true
+    })
+    .await;
+
+    b.close(None).await.unwrap();
+    wait_for(&mut a, |m| is_chat(m, "event", "Ann", "left")).await;
+    let r = http(&addr, "GET /api/state HTTP/1.1").await;
+    assert!(
+        r.contains(r#""playing":true"#),
+        "one of two leaving must not pause: {r}"
+    );
+
+    a.close(None).await.unwrap();
+    drop(a);
+    let mut paused = false;
+    for _ in 0..50 {
+        if http(&addr, "GET /api/state HTTP/1.1")
+            .await
+            .contains(r#""playing":false"#)
+        {
+            paused = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(paused);
+    let mut c = connect(&addr, "Bob").await;
+    let h = wait_for(&mut c, |m| m["type"] == "chat_history").await;
+    let texts: Vec<_> = h["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            format!(
+                "{}: {}",
+                m["name"].as_str().unwrap(),
+                m["text"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(texts.last().unwrap(), "Cloudberry: paused", "{texts:?}");
+    assert_eq!(texts.iter().filter(|t| t.ends_with("paused")).count(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Phase-2 DB gains the reactions table; reactions credit whoever queued the current track.
+#[tokio::test]
+async fn dj_of_day_from_phase2_db() {
+    let (addr, dir) = start_in(phase2_dir("dj")).await;
+    let (mut ann, _) = join(&addr, "Ann").await;
+    let (mut bob, _) = join(&addr, "Bob").await;
+
+    // Nothing current: the reaction is broadcast but not counted.
+    send(&mut ann, json!({ "type": "react", "emoji": "🔥" })).await;
+    wait_for(&mut ann, |m| m["type"] == "react").await;
+
+    send(&mut ann, json!({ "type": "enqueue", "track_id": A })).await;
+    wait_for(&mut bob, |m| {
+        m["type"] == "state" && m["state"]["current"]["added_by"] == "Ann"
+    })
+    .await;
+    send(&mut bob, json!({ "type": "enqueue", "track_id": B })).await;
+    wait_for(&mut bob, |m| is_chat(m, "event", "Bob", "added Song B")).await;
+
+    // Bob reacts to Ann's track: credit goes to Ann (the current item's added_by), not Bob.
+    send(&mut bob, json!({ "type": "react", "emoji": "❤️" })).await;
+    let st = wait_for(&mut bob, |m| m["type"] == "state").await;
+    assert_eq!(
+        st["state"]["dj_of_day"], "Ann",
+        "first counted reaction: {st}"
+    );
+    send(&mut bob, json!({ "type": "react", "emoji": "❤️" })).await;
+    wait_for(&mut bob, |m| m["type"] == "react").await; // Ann 2
+
+    send(&mut ann, json!({ "type": "skip" })).await;
+    wait_for(&mut ann, |m| {
+        m["type"] == "state" && m["state"]["current"]["added_by"] == "Bob"
+    })
+    .await;
+    send(&mut ann, json!({ "type": "react", "emoji": "🎉" })).await; // Bob 1
+    wait_for(&mut ann, |m| m["type"] == "react").await;
+    send(&mut ann, json!({ "type": "react", "emoji": "🎉" })).await; // Bob 2: tie, Bob is newer
+    wait_for(&mut ann, |m| is_dj(m, json!("Bob"))).await;
+
+    // Restart on the same DB: today's tally persists.
+    let r = http(&start_in(dir.clone()).await.0, "GET /api/state HTTP/1.1").await;
+    assert!(r.contains(r#""dj_of_day":"Bob""#), "{r}");
+    let db = rusqlite::Connection::open(dir.join("db.sqlite")).unwrap();
+    let rows: Vec<(String, i64)> = db
+        .prepare("SELECT name, count FROM reactions ORDER BY name")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(rows, [("Ann".to_string(), 2), ("Bob".to_string(), 2)]);
     let _ = std::fs::remove_dir_all(dir);
 }
