@@ -224,3 +224,38 @@ Persistence: `chat(id INT PK, kind, name, text, at)` (keep last 500), `tracks.ga
 - Map AudioContext time to wall time using `ctx.getOutputTimestamp()` (contextTime ↔
   performanceTime) and subtract `ctx.outputLatency` so Bluetooth output still lines up.
 - Clock offset: median of the 3 lowest-RTT samples of the last 10.
+
+---
+
+# Phase 2: visualization (added 2026-11-07, Toby: "want to be sure we work on some cool audio visualization")
+
+## WASM ABI additions (backward compatible; existing exports unchanged)
+```
+bass()   -> f32   // smoothed 0..1, ~30–150 Hz
+mid()    -> f32   // smoothed 0..1, ~150 Hz–2 kHz
+treble() -> f32   // smoothed 0..1, ~2–16 kHz
+beat()   -> f32   // 1.0 on a detected onset, decays to 0 over ~250 ms (uses dt)
+waveform_ptr() -> *const f32   // 256 downsampled time-domain samples (-1..1), for oscilloscope rings
+```
+Beat detection: spectral flux on the low/low-mid bands with an adaptive threshold (mean + k·stddev
+over the last ~1 s of flux values) and a ~200 ms refractory period. Native tests: a synthetic kick
+pattern (decaying 60 Hz bursts every 500 ms) yields beats at those times and none in between; steady
+tone yields none.
+
+## Modes (web, all in `web/src/lib/visualizer/`)
+Single rAF loop owns analysis (one wasm `process` per frame) and exposes a reactive store/rune of
+`{bars, peaks, waveform, energy, bass, mid, treble, beat}`; renderers subscribe.
+1. **Halo** (default): Canvas 2D ring of 64 radial bars around the now-playing art (mirrored, slow
+   rotation), thin waveform ring, art scales ~1–3% on `beat`, glow tinted `--track-tint`.
+2. **Bloom**: WebGL2 fullscreen fragment shader, domain-warped noise gradient in warm orange /
+   `--track-tint`; `bass` → warp strength, `beat` → brief luminance swell, `treble` → fine sparkle,
+   `energy` → overall brightness. Rendered at ~0.5× resolution, upscaled. Also used at low opacity as
+   the app background (`<Backdrop/>`).
+3. **Bars**: Canvas 2D bottom spectrum with falling peak caps and rounded tops.
+- **Lean-back mode** (`F` key / button): fullscreen (Fullscreen API), hides controls, big art + title +
+  lyrics over Bloom; Esc exits.
+- Mode choice in localStorage (try/catch). Pause the loop when `document.hidden`; cap DPR at 2.
+- `prefers-reduced-motion`: no animation, static gradient + still bars snapshot.
+- WebGL2 unavailable → Bloom falls back to a CSS radial-gradient driven by `energy`.
+- Public surface for the rest of the app: `<Visualizer mode={...}/>`, `<Backdrop/>`, `<LeanBack/>`,
+  and `startAnalysis(analyser: AnalyserNode)` / `stopAnalysis()`.
