@@ -1,27 +1,71 @@
+import { SHADER_IDS } from './shaders/index.ts';
+
 export type Mode = 'halo' | 'bloom' | 'bars';
 export const MODES: Mode[] = ['halo', 'bloom', 'bars'];
 const KEY = 'cloudberry.vizMode';
+const SHADER_KEY = 'cloudberry.leanShader';
+const AUTO_KEY = 'cloudberry.leanAuto';
 
-function load(): Mode {
+function read(key: string): string | null {
 	try {
-		const v = localStorage.getItem(KEY) as Mode;
-		if (MODES.includes(v)) return v;
+		return localStorage.getItem(key);
 	} catch {
-		// storage blocked (private mode etc.): default it is
+		return null; // storage blocked (private mode etc.): defaults it is
 	}
-	return 'halo';
 }
-
-/** Shared visualizer UI state: chosen mode (persisted) and whether lean-back is open. */
-export const viz = $state({ mode: load(), lean: false });
-
-export function setMode(m: Mode) {
-	viz.mode = m;
+function save(key: string, v: string) {
 	try {
-		localStorage.setItem(KEY, m);
+		localStorage.setItem(key, v);
 	} catch {
 		// not persisted, still works for this session
 	}
+}
+
+const mode = read(KEY) as Mode;
+const shader = read(SHADER_KEY) ?? '';
+
+/** Shared visualizer UI state: mode, lean-back open, lean-back shader + auto-cycle (all but `lean` persisted). */
+export const viz = $state({
+	mode: MODES.includes(mode) ? mode : ('halo' as Mode),
+	lean: false,
+	shader: SHADER_IDS.includes(shader) ? shader : SHADER_IDS[0],
+	auto: read(AUTO_KEY) === '1'
+});
+
+export function setMode(m: Mode) {
+	viz.mode = m;
+	save(KEY, m);
+}
+
+export function setShader(id: string) {
+	if (!SHADER_IDS.includes(id)) return;
+	viz.shader = id;
+	save(SHADER_KEY, id);
+}
+
+/** Next (+1) / previous (-1) shader, wrapping. */
+export function stepShader(dir: number) {
+	const n = SHADER_IDS.length;
+	setShader(SHADER_IDS[(((SHADER_IDS.indexOf(viz.shader) + dir) % n) + n) % n]);
+}
+
+export function setAuto(on: boolean) {
+	viz.auto = on;
+	save(AUTO_KEY, on ? '1' : '0');
+}
+
+/** Lean-back's own keys: ←/→ change shader, A toggles auto-cycle. True if handled. */
+export function leanKey(key: string): boolean {
+	if (key === 'ArrowLeft') stepShader(-1);
+	else if (key === 'ArrowRight') stepShader(1);
+	else if (key === 'a' || key === 'A') setAuto(!viz.auto);
+	else return false;
+	return true;
+}
+
+/** Call when the playing track changes: with auto-cycle on, move to the next shader. */
+export function trackChanged() {
+	if (viz.auto) stepShader(1);
 }
 
 /** Open/close lean-back. Call from a user gesture: it also asks for real fullscreen. */

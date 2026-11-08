@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import Icon from '#lib/icons/Icon.svelte';
 	import type { Station } from '#lib/station.svelte.ts';
@@ -6,21 +7,21 @@
 	import { lineAt } from '#lib/lyrics.ts';
 	import { ui } from '#lib/ui.svelte.ts';
 	import Art from '#lib/components/Art.svelte';
-	import Berry from '#lib/components/Berry.svelte';
-	import Bloom from './Bloom.svelte';
+	import ShaderCanvas from './ShaderCanvas.svelte';
+	import ShaderPicker from './ShaderPicker.svelte';
 	import { follow, frames, reducedMotion } from './analysis.ts';
-	import { setLean, viz } from './state.svelte.ts';
-	import { motion, smearAnimate } from '#lib/motion/motion.ts';
+	import { leanKey, setLean, trackChanged, viz } from './state.svelte.ts';
+	import { motion } from '#lib/motion/motion.ts';
 
-	/** Enter: the art flies up out of the dark (smeared), the words land after it. */
+	/** Enter: the art slides up into place, the readouts land after it. Short and mechanical. */
 	function arrive(el: HTMLElement) {
-		smearAnimate(el.querySelector<HTMLElement>('.art'), { y: [260, 0], scale: [0.6, 1], rotate: [-9, -2], opacity: [0, 1], duration: 720, ease: 'outBack(1.3)' });
+		motion(el.querySelector<HTMLElement>('.art'), { y: [24, 0], opacity: [0, 1], duration: 320 });
 		el.querySelectorAll<HTMLElement>('.meta, .lyric').forEach((m, i) =>
-			motion(m, { y: [40, 0], opacity: [0, 1], duration: 600, delay: 220 + i * 90 })
+			motion(m, { y: [12, 0], opacity: [0, 1], duration: 260, delay: 120 + i * 60 })
 		);
 	}
 
-	/** Fullscreen "lean-back" view: big art, title and the current lyric line over Bloom. */
+	/** Fullscreen "lean-back" view: big art, title and the current lyric line over a shader from the pack. */
 	let { station }: { station: Station } = $props();
 
 	const cur = $derived(station.state?.current ?? null);
@@ -40,6 +41,9 @@
 			setLean(!viz.lean);
 		} else if (e.key === 'Escape' && viz.lean) {
 			setLean(false);
+		} else if (viz.lean && leanKey(e.key)) {
+			e.preventDefault();
+			wake(); // show the picker so the change is visible
 		}
 	}
 
@@ -57,6 +61,14 @@
 		clearTimeout(idleTimer);
 		idleTimer = window.setTimeout(() => (idle = true), 2500);
 	}
+
+	// Auto-cycle: a new track moves to the next shader.
+	let lastTrack: unknown = Symbol();
+	$effect(() => {
+		const q = cur?.queue_id;
+		if (typeof lastTrack !== 'symbol' && q !== lastTrack) untrack(trackChanged);
+		lastTrack = q;
+	});
 
 	// Current lyric line (lyrics are fetched by <Lyrics/> into ui.lines).
 	let idx = $state(-1);
@@ -103,79 +115,102 @@
 		tabindex="-1"
 		bind:this={root}
 		onpointermove={wake}
+		onpointerdown={wake}
 		transition:fade={{ duration: dur(240) }}
 	>
-		<Bloom variant="fill" scale={0.5} />
+		<ShaderCanvas shader={viz.shader} still={cur?.queue_id} />
 
 		<div class="content" use:arrive>
 			<div class="art" bind:this={artEl}>
 				{#key cur?.queue_id}
-					<div class="art-in" in:fade={{ duration: dur(500) }}>
+					<div class="art-in" in:fade={{ duration: dur(300) }}>
 						{#if cur}
 							<Art track={cur.track} size="100%" />
 						{:else}
-							<div class="idle-art"><Berry bead={56} opacity={0.5} /></div>
+							<div class="idle-art">NO SIGNAL</div>
 						{/if}
 					</div>
 				{/key}
 			</div>
 			{#key cur?.queue_id}
-				<div class="meta" in:fade={{ duration: dur(500), delay: dur(120) }}>
+				<div class="meta plate" in:fade={{ duration: dur(300), delay: dur(80) }}>
+					<p class="label"><span class="led" class:on={!!cur}></span>{cur ? 'Now playing' : 'Idle'}</p>
 					<h1>{cur?.track.title ?? 'Dead air'}</h1>
-					{#if cur}<p>added by {cur.added_by}</p>{/if}
+					{#if cur}<p class="by">Added by {cur.added_by}</p>{/if}
 				</div>
 			{/key}
 			{#if lines}
-				<div class="lyric" aria-live="polite">
+				<div class="lyric plate" aria-live="polite">
 					{#key idx}
-						<p in:fade={{ duration: dur(360) }}>{lines[idx]?.text || '♪'}</p>
+						<p in:fade={{ duration: dur(200) }}>{lines[idx]?.text || '♪'}</p>
 					{/key}
 					<p class="next" aria-hidden="true">{lines[idx + 1]?.text ?? ''}</p>
 				</div>
 			{/if}
 		</div>
 
+		<div class="pick">
+			<ShaderPicker />
+		</div>
+
 		<button class="exit" onclick={() => setLean(false)} aria-label="Exit lean-back (Esc)" title="Exit (Esc)">
-			<Icon name="shrink" size={20} />
+			<Icon name="shrink" size={18} />
 		</button>
 	</div>
 {/if}
 
 <style>
+	/* Instrument display. Self-contained tokens: the app shell's names may change. */
 	.lean {
+		--lb-paper: #ecebe8;
+		--lb-panel: #dad9d6;
+		--lb-ink: #1e1f21;
+		--lb-ink-2: #5d5f63;
+		--lb-line: #1e1f21;
+		--lb-orange: #f0912b;
+		--lb-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		--lb-sans: 'Inter Variable', 'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif;
 		position: fixed;
 		inset: 0;
 		z-index: 100;
-		background: var(--bg);
+		background: var(--lb-paper);
+		color: var(--lb-ink);
 		display: grid;
 		place-items: center;
 		overflow: hidden;
 		outline: none;
 	}
+	@media (prefers-color-scheme: dark) {
+		.lean {
+			--lb-paper: #121315;
+			--lb-panel: #1f2022;
+			--lb-ink: #e6e5e1;
+			--lb-ink-2: #9a9b9e;
+			--lb-line: #e6e5e1;
+		}
+	}
 	.lean.idle {
 		cursor: none;
 	}
-	/* Content sits above the full-bleed Bloom canvas (z 0) in the dialog's own stacking context. */
+	/* Content sits above the full-bleed shader canvas (z 0) in the dialog's own stacking context. */
 	.content {
 		position: relative;
 		z-index: 1;
 		display: grid;
 		justify-items: center;
-		gap: clamp(20px, 4vh, 40px);
-		padding: 32px;
+		gap: clamp(14px, 3vh, 28px);
+		/* Bottom room for the shader picker. */
+		padding: 32px 32px 96px;
 		text-align: center;
 		max-width: min(92vw, 900px);
 	}
 	.art {
-		width: min(52vh, 72vw);
+		width: min(50vh, 72vw);
 		aspect-ratio: 1;
 		display: grid;
-		border-radius: 28px;
 		overflow: hidden;
-		rotate: -2deg;
-		box-shadow:
-			0 0 0 7px var(--die),
-			0 12px 0 7px var(--shade);
+		border: 1px solid var(--lb-line);
+		outline: 6px solid var(--lb-paper);
 		will-change: scale;
 	}
 	.art-in {
@@ -189,67 +224,115 @@
 		height: 100%;
 		display: grid;
 		place-items: center;
-		background: var(--surface-2);
+		background: var(--lb-panel);
+		color: var(--lb-ink-2);
+		font: 500 0.8rem/1 var(--lb-mono);
+		letter-spacing: 0.2em;
 	}
-	/* Words ride on cream plates so they read over any part of the field. */
-	.meta,
-	.lyric {
-		padding: 14px 26px 16px;
-		border-radius: 22px;
-		background: var(--surface);
-		color: var(--ink);
-		box-shadow: var(--sticker);
+	/* Readout plates: paper, one hairline, mono label. Text always reads over any shader. */
+	.plate {
+		padding: 10px 18px 12px;
+		background: var(--lb-paper);
+		color: var(--lb-ink);
+		border: 1px solid var(--lb-line);
 	}
-	.meta {
-		rotate: 1deg;
+	.label,
+	.by {
+		margin: 0;
+		font: 500 0.72rem/1.2 var(--lb-mono);
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--lb-ink-2);
+	}
+	.label {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		margin-bottom: 6px;
+	}
+	.led {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--lb-panel);
+		box-shadow: inset 0 0 0 1px var(--lb-ink-2);
+	}
+	.led.on {
+		background: var(--lb-orange);
+		box-shadow: none;
 	}
 	.meta h1 {
-		font-size: clamp(1.8rem, 1.2rem + 2.6vw, 3.4rem);
+		margin: 0;
+		font-family: var(--lb-sans);
+		font-size: clamp(1.5rem, 1rem + 2.2vw, 2.8rem);
+		font-weight: 600;
 		line-height: 1.08;
-		letter-spacing: -0.03em;
+		letter-spacing: -0.035em;
 		text-wrap: balance;
 	}
-	.meta p {
-		margin: 6px 0 0;
-		color: var(--ink-2);
-		font-size: clamp(0.95rem, 0.8rem + 0.5vw, 1.15rem);
+	.by {
+		margin-top: 8px;
 	}
 	.lyric {
 		display: grid;
-		gap: 6px;
+		gap: 4px;
 		min-height: 4.2em;
 	}
 	.lyric p {
 		margin: 0;
-		font-family: var(--font-display);
-		font-size: clamp(1.2rem, 0.9rem + 1.2vw, 1.9rem);
+		font-family: var(--lb-sans);
+		font-size: clamp(1.1rem, 0.9rem + 1vw, 1.7rem);
 		font-weight: 600;
 		letter-spacing: -0.02em;
 		text-wrap: balance;
 	}
 	.lyric .next {
-		font-size: clamp(0.95rem, 0.8rem + 0.6vw, 1.25rem);
-		color: var(--ink-2);
-		font-weight: 500;
+		font: 400 clamp(0.8rem, 0.7rem + 0.4vw, 1rem) / 1.3 var(--lb-mono);
+		color: var(--lb-ink-2);
 	}
 	.exit {
 		position: absolute;
 		top: max(18px, env(safe-area-inset-top));
 		right: max(18px, env(safe-area-inset-right));
-		width: 42px;
-		height: 42px;
+		width: 40px;
+		height: 40px;
 		display: grid;
 		place-items: center;
 		z-index: 2;
-		border-radius: 12px;
-		color: var(--ink);
-		background: var(--surface);
-		box-shadow: 0 4px 0 var(--shade);
-		transition:
-			opacity 400ms ease,
-			transform 120ms var(--ease-out);
+		border-radius: 0;
+		color: var(--lb-ink);
+		background: var(--lb-paper);
+		border: 1px solid var(--lb-line);
+		transition: opacity 200ms linear;
 	}
-	.idle .exit {
+	.exit:active {
+		background: var(--lb-panel);
+	}
+	.pick {
+		position: absolute;
+		z-index: 2;
+		left: 0;
+		right: 0;
+		bottom: max(20px, env(safe-area-inset-bottom));
+		display: flex;
+		justify-content: center;
+		transition:
+			opacity 200ms linear,
+			translate 200ms cubic-bezier(0.2, 0, 0, 1);
+	}
+	.idle .exit,
+	.idle .pick {
 		opacity: 0;
+		pointer-events: none;
+	}
+	.idle .pick {
+		translate: 0 8px;
+	}
+	/* Keyboard users keep the picker while they're in it. */
+	.idle .pick:has(:global(:focus-visible)) {
+		opacity: 1;
+		pointer-events: auto;
+		translate: 0 0;
 	}
 </style>
