@@ -9,6 +9,7 @@
 	import Library from '#lib/components/Library.svelte';
 	import Listeners from '#lib/components/Listeners.svelte';
 	import Berry from '#lib/components/Berry.svelte';
+	import { Backdrop, LeanBack } from '#lib/visualizer/index.ts';
 
 	const NAME_KEY = 'cloudberry.name';
 	let name = $state(localStorage.getItem(NAME_KEY) ?? '');
@@ -68,6 +69,8 @@
 		{/if}
 	</main>
 {:else}
+	<Backdrop />
+	<LeanBack {station} />
 	<div class="app" in:fade={{ duration: dur(400) }}>
 		<header>
 			<div class="brand">
@@ -230,6 +233,7 @@
 
 	/* ---------- app ---------- */
 	.app {
+		position: relative; /* paints above <Backdrop/> */
 		max-width: 1180px;
 		margin: 0 auto;
 		padding: 20px 32px 64px;

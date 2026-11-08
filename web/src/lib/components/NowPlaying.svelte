@@ -6,10 +6,15 @@
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
 	import Icon from './Icon.svelte';
-	import Visualizer from './Visualizer.svelte';
+	import { ModeSwitch, Visualizer, startAnalysis, stopAnalysis, viz } from '#lib/visualizer/index.ts';
 	import Berry from './Berry.svelte';
 
 	let { station }: { station: Station } = $props();
+
+	$effect(() => {
+		startAnalysis(station.player.analyser);
+		return stopAnalysis;
+	});
 
 	const s = $derived(station.state);
 	const cur = $derived(s?.current ?? null);
@@ -72,8 +77,9 @@
 </script>
 
 <section class="card now" aria-label="Now playing">
-	<div class="stage">
+	<div class="stage" class:halo={viz.mode === 'halo'}>
 		<div class="glow" class:on={s?.playing} aria-hidden="true"></div>
+		{#if viz.mode !== 'bars'}<Visualizer mode={viz.mode} />{/if}
 		<div class="stack">
 			{#key cur?.queue_id}
 				<div class="art-wrap" in:trackIn out:trackOut>
@@ -154,7 +160,8 @@
 		</div>
 	</div>
 
-	<Visualizer analyser={station.player.analyser} />
+	{#if viz.mode === 'bars'}<Visualizer mode="bars" />{/if}
+	<ModeSwitch />
 </section>
 
 <style>
@@ -187,6 +194,20 @@
 		transition:
 			opacity 1.2s var(--ease-out),
 			transform 1.2s var(--ease-out);
+	}
+
+	/* Visualizer: art breathes on beats; Halo turns it into a disc inside the ring. */
+	.stage > .stack {
+		scale: var(--viz-pulse, 1);
+	}
+	.art-wrap {
+		transition:
+			border-radius 480ms var(--ease-in-out),
+			scale 480ms var(--ease-in-out);
+	}
+	.halo .art-wrap {
+		border-radius: 50%;
+		scale: 0.66; /* = 2 * ART in Halo.svelte */
 	}
 
 	/* Keyed children overlap so old and new cross-fade in place. */

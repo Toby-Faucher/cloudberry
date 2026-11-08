@@ -1,6 +1,7 @@
 //! Audio analysis for the Cloudberry visualizer, exported as a raw WASM ABI
 //! (no wasm-bindgen). JS writes FFT_SIZE samples at `input_ptr()`, calls
-//! `process(sample_rate, dt)`, then reads BARS floats at `output_ptr()` / `peaks_ptr()`.
+//! `process(sample_rate, dt)`, then reads BARS floats at `output_ptr()` / `peaks_ptr()`,
+//! WAVE_POINTS floats at `waveform_ptr()`, and the scalars `energy`/`bass`/`mid`/`treble`/`beat`.
 
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ use realfft::{RealFftPlanner, RealToComplex};
 
 pub const FFT_SIZE: usize = 2048;
 pub const BARS: usize = 64;
+pub const WAVE_POINTS: usize = 256;
 const BINS: usize = FFT_SIZE / 2 + 1;
 
 const MIN_HZ: f32 = 30.0;
@@ -24,11 +26,34 @@ const ENERGY_TAU: f32 = 0.15;
 /// Peak markers fall at this many units (of 0..1) per second.
 const PEAK_FALL_PER_S: f32 = 0.6;
 
+/// Band ranges (Hz) for the `bass` / `mid` / `treble` summaries.
+const BASS_HZ: (f32, f32) = (30.0, 150.0);
+const MID_HZ: (f32, f32) = (150.0, 2_000.0);
+const TREBLE_HZ: (f32, f32) = (2_000.0, 16_000.0);
+
+/// Beat detection: spectral flux over the bars below this frequency (low + low-mid).
+const FLUX_MAX_HZ: f32 = 500.0;
+/// Threshold = mean + FLUX_K * stddev of the last FLUX_WINDOW_S of flux values.
+const FLUX_K: f32 = 1.5;
+const FLUX_WINDOW_S: f32 = 1.0;
+/// Absolute minimum flux (mean positive rise per band, in 0..1 units), so near-steady
+/// signals with a tiny stddev never trigger.
+const FLUX_FLOOR: f32 = 0.03;
+const REFRACTORY_S: f32 = 0.2;
+const BEAT_DECAY_S: f32 = 0.25;
+/// Flux history ring; 128 frames covers 1 s at up to ~120 fps.
+const FLUX_HISTORY: usize = 128;
+
 pub struct Analyzer {
     pub input: [f32; FFT_SIZE],
     pub bars: [f32; BARS],
     pub peaks: [f32; BARS],
     pub energy: f32,
+    pub bass: f32,
+    pub mid: f32,
+    pub treble: f32,
+    pub waveform: [f32; WAVE_POINTS],
+    pub beat: BeatDetector,
     window: [f32; FFT_SIZE],
     window_gain: f32,
     fft: Arc<dyn RealToComplex<f32>>,
@@ -58,6 +83,11 @@ impl Analyzer {
             bars: [0.0; BARS],
             peaks: [0.0; BARS],
             energy: 0.0,
+            bass: 0.0,
+            mid: 0.0,
+            treble: 0.0,
+            waveform: [0.0; WAVE_POINTS],
+            beat: BeatDetector::default(),
             window,
             window_gain,
             buf: fft.make_input_vec(),
@@ -92,6 +122,108 @@ impl Analyzer {
         }
         let target = rms_level(&self.input);
         self.energy += (target - self.energy) * (1.0 - (-dt / ENERGY_TAU).exp());
+
+        self.bass = smooth(self.bass, range_mean(&self.levels, BASS_HZ), dt);
+        self.mid = smooth(self.mid, range_mean(&self.levels, MID_HZ), dt);
+        self.treble = smooth(self.treble, range_mean(&self.levels, TREBLE_HZ), dt);
+        self.beat.update(&self.levels, dt);
+
+        let step = FFT_SIZE / WAVE_POINTS;
+        for (w, chunk) in self.waveform.iter_mut().zip(self.input.chunks_exact(step)) {
+            let sum: f32 = chunk.iter().filter(|s| s.is_finite()).sum();
+            *w = (sum / step as f32).clamp(-1.0, 1.0);
+        }
+    }
+}
+
+/// Mean level of the bars whose centre frequency lies in `lo..hi` Hz.
+fn range_mean(levels: &[f32; BARS], (lo, hi): (f32, f32)) -> f32 {
+    let (mut sum, mut n) = (0.0, 0);
+    for (i, l) in levels.iter().enumerate() {
+        let centre = (band_edge(i) * band_edge(i + 1)).sqrt();
+        if (lo..hi).contains(&centre) {
+            sum += l;
+            n += 1;
+        }
+    }
+    if n == 0 { 0.0 } else { sum / n as f32 }
+}
+
+/// Number of low bars used for spectral flux (those entirely below FLUX_MAX_HZ).
+fn flux_bands() -> usize {
+    (0..BARS).take_while(|&i| band_edge(i + 1) <= FLUX_MAX_HZ).count()
+}
+
+/// Onset detector: positive spectral flux on the low bars against an adaptive
+/// threshold over the last second, with a refractory period.
+pub struct BeatDetector {
+    /// 1.0 on an onset, falling linearly to 0 over BEAT_DECAY_S.
+    pub value: f32,
+    prev: [f32; BARS],
+    flux: [f32; FLUX_HISTORY],
+    dts: [f32; FLUX_HISTORY],
+    head: usize,
+    len: usize,
+    since_beat: f32,
+}
+
+impl Default for BeatDetector {
+    fn default() -> Self {
+        Self {
+            value: 0.0,
+            prev: [0.0; BARS],
+            flux: [0.0; FLUX_HISTORY],
+            dts: [0.0; FLUX_HISTORY],
+            head: 0,
+            len: 0,
+            since_beat: f32::INFINITY,
+        }
+    }
+}
+
+impl BeatDetector {
+    /// Feed one frame of (unsmoothed) bar levels. Returns true on an onset.
+    pub fn update(&mut self, levels: &[f32; BARS], dt: f32) -> bool {
+        let n = flux_bands();
+        let rise: f32 = (0..n).map(|i| (levels[i] - self.prev[i]).max(0.0)).sum();
+        let flux = rise / n as f32;
+        self.prev = *levels;
+
+        let (mean, sd) = self.stats();
+        self.since_beat += dt;
+        self.value = (self.value - dt / BEAT_DECAY_S).max(0.0);
+        let onset =
+            flux > FLUX_FLOOR && flux > mean + FLUX_K * sd && self.since_beat >= REFRACTORY_S;
+        if onset {
+            self.value = 1.0;
+            self.since_beat = 0.0;
+        }
+
+        self.flux[self.head] = flux;
+        self.dts[self.head] = dt;
+        self.head = (self.head + 1) % FLUX_HISTORY;
+        self.len = (self.len + 1).min(FLUX_HISTORY);
+        onset
+    }
+
+    /// Mean and stddev of the flux values covering the last FLUX_WINDOW_S.
+    fn stats(&self) -> (f32, f32) {
+        let (mut sum, mut sq, mut t, mut n) = (0.0, 0.0, 0.0, 0);
+        for k in 1..=self.len {
+            let i = (self.head + FLUX_HISTORY - k) % FLUX_HISTORY;
+            sum += self.flux[i];
+            sq += self.flux[i] * self.flux[i];
+            n += 1;
+            t += self.dts[i];
+            if t >= FLUX_WINDOW_S {
+                break;
+            }
+        }
+        if n == 0 {
+            return (0.0, 0.0);
+        }
+        let mean = sum / n as f32;
+        (mean, (sq / n as f32 - mean * mean).max(0.0).sqrt())
     }
 }
 
@@ -176,6 +308,31 @@ pub extern "C" fn peaks_ptr() -> *const f32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn energy() -> f32 {
     analyzer().energy
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn bass() -> f32 {
+    analyzer().bass
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn mid() -> f32 {
+    analyzer().mid
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn treble() -> f32 {
+    analyzer().treble
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn beat() -> f32 {
+    analyzer().beat.value
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn waveform_ptr() -> *const f32 {
+    analyzer().waveform.as_ptr()
 }
 
 #[unsafe(no_mangle)]
@@ -269,5 +426,87 @@ mod tests {
         a.process(0.0, f32::NAN);
         a.process(SR, 1.0 / 60.0);
         assert!(a.bars.iter().all(|v| v.is_finite()) && a.energy.is_finite());
+    }
+
+    /// Runs `signal(t)` (seconds) through the analyzer the way the browser does: at
+    /// 60 fps, each frame sees the most recent FFT_SIZE samples. Returns the times
+    /// (s) of frames where an onset fired.
+    fn onsets(seconds: f32, signal: impl Fn(f32) -> f32) -> Vec<f32> {
+        let mut a = Analyzer::new();
+        let dt = 1.0 / 60.0;
+        let mut out = Vec::new();
+        for f in 1..=(seconds / dt) as usize {
+            let end = f as f32 * dt;
+            for (i, s) in a.input.iter_mut().enumerate() {
+                let t = end - (FFT_SIZE - i) as f32 / SR;
+                *s = if t < 0.0 { 0.0 } else { signal(t) };
+            }
+            a.process(SR, dt);
+            if a.beat.value == 1.0 {
+                out.push(end);
+            }
+        }
+        out
+    }
+
+    fn kick(t: f32) -> f32 {
+        let since = t % 0.5;
+        0.8 * (2.0 * std::f32::consts::PI * 60.0 * since).sin() * (-since / 0.06).exp()
+    }
+
+    #[test]
+    fn kick_pattern_gives_beats_on_time() {
+        let beats = onsets(4.0, kick);
+        let kicks: Vec<f32> = (0..8).map(|k| k as f32 * 0.5).collect();
+        assert_eq!(beats.len(), kicks.len(), "{beats:?}");
+        for (b, k) in beats.iter().zip(&kicks) {
+            assert!((0.0..0.07).contains(&(b - k)), "beat {b} for kick {k}: {beats:?}");
+        }
+    }
+
+    #[test]
+    fn kicks_over_a_steady_pad_still_detected() {
+        let pad = |t: f32| 0.2 * (2.0 * std::f32::consts::PI * 330.0 * t).sin();
+        let beats = onsets(4.0, |t| kick(t) + pad(t));
+        assert_eq!(beats.len(), 8, "{beats:?}");
+    }
+
+    #[test]
+    fn steady_tone_gives_no_beats() {
+        // The tone's own start (silence -> sound) is a real onset; nothing after it.
+        for hz in [60.0, 220.0, 1000.0] {
+            let beats = onsets(4.0, |t| 0.5 * (2.0 * std::f32::consts::PI * hz * t).sin());
+            assert!(beats.iter().all(|&b| b < 0.1), "{hz} Hz: {beats:?}");
+        }
+    }
+
+    #[test]
+    fn beat_decays_over_250ms() {
+        let mut d = BeatDetector::default();
+        let mut loud = [0.0; BARS];
+        assert!(!d.update(&loud, 0.1));
+        loud[..10].fill(0.9);
+        assert!(d.update(&loud, 0.05));
+        assert_eq!(d.value, 1.0);
+        d.update(&loud, 0.125);
+        assert!((d.value - 0.5).abs() < 1e-4, "{}", d.value);
+        d.update(&loud, 0.2);
+        assert_eq!(d.value, 0.0);
+    }
+
+    #[test]
+    fn bands_and_waveform() {
+        let mut a = Analyzer::new();
+        sine(&mut a, 80.0, 0.5);
+        settle(&mut a);
+        assert!(a.bass > a.mid && a.mid > a.treble, "{} {} {}", a.bass, a.mid, a.treble);
+        sine(&mut a, 5000.0, 0.5);
+        settle(&mut a);
+        assert!(a.treble > a.bass, "{} {}", a.treble, a.bass);
+        // 80 Hz at 48 kHz: 8-sample means barely attenuate it.
+        sine(&mut a, 80.0, 0.5);
+        a.process(SR, 1.0 / 60.0);
+        let max = a.waveform.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!((0.45..=0.5).contains(&max), "{max}");
     }
 }
