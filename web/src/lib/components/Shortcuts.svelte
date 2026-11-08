@@ -6,6 +6,8 @@
 		[['/'], 'Chat'],
 		[['?'], 'This help'],
 		[['F'], 'Lean-back (fullscreen visualizer)'],
+		[['← →'], 'Lean-back: previous / next shader'],
+		[['A'], 'Lean-back: new shader every track (auto-cycle)'],
 		[['Ctrl', 'V'], 'Paste a YouTube link anywhere to add it']
 	];
 </script>
