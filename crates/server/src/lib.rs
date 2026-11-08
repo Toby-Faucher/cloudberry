@@ -5,7 +5,7 @@ pub mod ytdl;
 use axum::body::Body;
 use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, Request, State};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Router, middleware};
@@ -26,6 +26,10 @@ pub struct Config {
     pub bind: String,
     pub static_dir: PathBuf,
     pub ytdlp: String,
+    /// Drop a WebSocket that sent nothing for this long (clients ping every 2 s).
+    pub idle_timeout: Duration,
+    /// Kill yt-dlp (and its whole process group) after this long.
+    pub download_timeout: Duration,
 }
 
 impl Config {
@@ -37,6 +41,8 @@ impl Config {
             bind: var("CLOUDBERRY_BIND", "0.0.0.0:8080"),
             static_dir: var("CLOUDBERRY_STATIC_DIR", "./web/build").into(),
             ytdlp: var("CLOUDBERRY_YTDLP", "yt-dlp"),
+            idle_timeout: Duration::from_secs(120),
+            download_timeout: Duration::from_secs(900),
         }
     }
 }
@@ -111,14 +117,31 @@ struct WsQuery {
 async fn ws_upgrade(
     State(shared): State<Arc<Shared>>,
     Query(q): Query<WsQuery>,
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
+    if !same_origin(&headers) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     let name = q.name.as_deref().unwrap_or("").trim().to_string();
     if !(1..=32).contains(&name.chars().count()) {
         return (StatusCode::BAD_REQUEST, "name must be 1-32 characters").into_response();
     }
     ws.max_message_size(64 * 1024)
         .on_upgrade(move |socket| client(shared, socket, name))
+}
+
+/// Block cross-site WebSockets: a browser always sends `Origin`; CLI clients may not.
+/// Compares Origin's host[:port] with `Host` exactly as received, so a reverse proxy that
+/// rewrites Host (instead of passing it through) will get 403s and must preserve it.
+fn same_origin(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers.get(header::ORIGIN) else {
+        return true;
+    };
+    let origin = origin.to_str().unwrap_or("");
+    let origin_host = origin.split_once("://").map_or("", |(_, rest)| rest);
+    let host = headers.get(header::HOST).and_then(|h| h.to_str().ok());
+    host.is_some_and(|h| !h.is_empty() && h.eq_ignore_ascii_case(origin_host))
 }
 
 const REACTIONS: [&str; 6] = ["🔥", "😂", "❤️", "👏", "🎉", "😴"];
@@ -178,6 +201,7 @@ struct Conn {
     name: String,
     chat: Limiter,
     react: Limiter,
+    actions: Limiter,
     last_poke: Option<Instant>,
 }
 
@@ -193,6 +217,7 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
         name,
         chat: Limiter::new(5),
         react: Limiter::new(10),
+        actions: Limiter::new(10),
         last_poke: None,
     };
     let welcome = json!({ "type": "welcome", "you": me }).to_string();
@@ -200,12 +225,19 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
     if socket.send(Message::Text(welcome.into())).await.is_ok()
         && socket.send(Message::Text(history.into())).await.is_ok()
     {
+        // A deadline, not a per-recv timeout: broadcasts must not keep a silent client alive.
+        let mut deadline = tokio::time::Instant::now() + shared.cfg.idle_timeout;
         loop {
             let out = tokio::select! {
-                msg = socket.recv() => match msg {
-                    Some(Ok(Message::Text(t))) => handle(&shared, &mut conn, &t),
-                    Some(Ok(_)) => None,
-                    _ => break,
+                msg = tokio::time::timeout_at(deadline, socket.recv()) => match msg {
+                    Ok(Some(Ok(m))) => {
+                        deadline = tokio::time::Instant::now() + shared.cfg.idle_timeout;
+                        match m {
+                            Message::Text(t) => handle(&shared, &mut conn, &t),
+                            _ => None,
+                        }
+                    }
+                    _ => break, // closed, error, or idle timeout
                 },
                 b = rx.recv() => match b {
                     Ok(m) => Some(m),
@@ -235,6 +267,22 @@ fn handle(shared: &Arc<Shared>, conn: &mut Conn, text: &str) -> Option<Utf8Bytes
         Ok(m) => m,
         Err(e) => return Some(error_msg(&format!("bad message: {e}"))),
     };
+    use ClientMsg::*;
+    let mutating = matches!(
+        msg,
+        Add { .. }
+            | Enqueue { .. }
+            | Insert { .. }
+            | Remove { .. }
+            | Move { .. }
+            | Play
+            | Pause
+            | Skip
+            | Seek { .. }
+    );
+    if mutating && !conn.actions.allow() {
+        return None; // flood: dropped silently, like chat
+    }
     let name = conn.name.as_str();
     let mut event: Option<String> = None; // posted to chat if the action succeeded
     let result: Result<(), String> = match msg {

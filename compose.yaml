@@ -4,6 +4,7 @@ services:
     # Or, if you publish an image somewhere, use it instead of building:
     # image: ghcr.io/<you>/cloudberry:latest
     container_name: cloudberry
+    init: true  # reaps orphaned yt-dlp/ffmpeg grandchildren after a timeout kill
     ports:
       - "${CLOUDBERRY_PORT:-8080}:8080"
     volumes:

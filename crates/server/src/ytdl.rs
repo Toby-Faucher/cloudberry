@@ -1,9 +1,9 @@
 //! YouTube URL validation and the single download worker (yt-dlp).
 
-use crate::station::{Job, JobStatus, Shared, Track, now_ms};
+use crate::station::{Job, JobStatus, QUEUE_FULL, Shared, Track, now_ms};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -93,13 +93,8 @@ pub async fn worker(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<DlReque
             Some(t) => Ok(t),
             None => {
                 shared.update_job(req.job_id, |j| j.status = JobStatus::Downloading);
-                match tokio::time::timeout(
-                    Duration::from_secs(900),
-                    download(&shared, req.job_id, &req.video_id),
-                )
-                .await
-                {
-                    Ok(Ok(mut t)) => {
+                match download(&shared, req.job_id, &req.video_id).await {
+                    Ok(mut t) => {
                         let mp3 = shared.cfg.music_dir.join(format!("{}.mp3", t.id));
                         match crate::loudness::measure(&mp3).await {
                             Ok(g) => t.gain_db = g,
@@ -108,8 +103,10 @@ pub async fn worker(shared: Arc<Shared>, mut rx: mpsc::UnboundedReceiver<DlReque
                         }
                         Ok(t)
                     }
-                    Ok(Err(e)) => Err(e),
-                    Err(_) => Err("download timed out".into()),
+                    Err(e) => {
+                        remove_partials(&shared.cfg.music_dir, &req.video_id);
+                        Err(e)
+                    }
                 }
             }
         };
@@ -157,6 +154,9 @@ async fn download(shared: &Arc<Shared>, job_id: u64, id: &str) -> Result<Track, 
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        // Own process group: yt-dlp_linux is a PyInstaller bootloader with a Python child that
+        // spawns ffmpeg, so a timeout must kill the whole group, not just the direct child.
+        .process_group(0)
         .spawn()
         .map_err(|e| format!("could not run yt-dlp: {e}"))?;
 
@@ -184,21 +184,34 @@ async fn download(shared: &Arc<Shared>, job_id: u64, id: &str) -> Result<Track, 
     let mut info: Option<serde_json::Value> = None;
     let mut last_err = String::new();
     let mut sent = 0.0f32;
-    while let Some(line) = lines.recv().await {
-        if let Some(p) = line.strip_prefix("cbp ") {
-            if let Some(f) = parse_progress(p)
-                && (f - sent >= 0.02 || f >= 0.99 && sent < 0.99)
-            {
-                sent = f;
-                shared.update_job(job_id, |j| j.progress = f.min(0.99));
+    let run = async {
+        while let Some(line) = lines.recv().await {
+            if let Some(p) = line.strip_prefix("cbp ") {
+                if let Some(f) = parse_progress(p)
+                    && (f - sent >= 0.02 || f >= 0.99 && sent < 0.99)
+                {
+                    sent = f;
+                    shared.update_job(job_id, |j| j.progress = f.min(0.99));
+                }
+            } else if line.starts_with('{') {
+                info = serde_json::from_str(&line).ok();
+            } else if let Some(e) = line.strip_prefix("ERROR: ") {
+                last_err = e.chars().take(300).collect();
             }
-        } else if line.starts_with('{') {
-            info = serde_json::from_str(&line).ok();
-        } else if let Some(e) = line.strip_prefix("ERROR: ") {
-            last_err = e.chars().take(300).collect();
         }
-    }
-    let status = child.wait().await.map_err(|e| e.to_string())?;
+        child.wait().await
+    };
+    let status = match tokio::time::timeout(shared.cfg.download_timeout, run).await {
+        Ok(s) => s.map_err(|e| e.to_string())?,
+        Err(_) => {
+            if let Some(pid) = child.id() {
+                // SAFETY: plain syscall; pgid == pid thanks to process_group(0).
+                unsafe { libc::killpg(pid as libc::pid_t, libc::SIGKILL) };
+            }
+            let _ = child.wait().await; // reap; grandchildren go to init (compose `init: true`)
+            return Err("download timed out".into());
+        }
+    };
     if !status.success() {
         return Err(if last_err.is_empty() {
             format!("yt-dlp exited with {status}")
@@ -239,6 +252,16 @@ async fn download(shared: &Arc<Shared>, job_id: u64, id: &str) -> Result<Track, 
     })
 }
 
+/// Delete `{id}.*` leftovers (.part, .webm, .jpg, half-converted .mp3) after a failed download.
+fn remove_partials(dir: &Path, id: &str) {
+    let prefix = format!("{id}.");
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if e.file_name().to_string_lossy().starts_with(&prefix) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
 /// "<downloaded> <total> <estimate>" (any may be "NA") -> fraction 0..1.
 fn parse_progress(p: &str) -> Option<f32> {
     let mut it = p.split_whitespace().map(|v| v.parse::<f64>().ok());
@@ -250,8 +273,10 @@ fn parse_progress(p: &str) -> Option<f32> {
 /// Create a queued job, or enqueue straight away if the track is already in the library.
 pub fn handle_add(shared: &Arc<Shared>, url: &str, added_by: &str) -> Result<(), String> {
     let id = video_id(url).ok_or("Not a valid YouTube video link")?;
-    if shared.enqueue(&id, added_by, usize::MAX).is_ok() {
-        return Ok(());
+    match shared.enqueue(&id, added_by, usize::MAX) {
+        Ok(()) => return Ok(()),
+        Err(e) if e == QUEUE_FULL => return Err(e),
+        Err(_) => {} // not in the library yet: download it
     }
     let job = Job {
         id: 0,
@@ -262,7 +287,7 @@ pub fn handle_add(shared: &Arc<Shared>, url: &str, added_by: &str) -> Result<(),
         error: None,
         added_by: added_by.to_string(),
     };
-    let job_id = shared.add_job(job);
+    let job_id = shared.add_job(job)?;
     shared
         .dl_tx
         .send(DlRequest {

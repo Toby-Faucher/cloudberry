@@ -15,13 +15,24 @@ async fn start(tag: &str) -> (String, std::path::PathBuf) {
 }
 
 async fn start_in(dir: std::path::PathBuf) -> (String, std::path::PathBuf) {
-    let cfg = Config {
+    start_with(dir, |_| {}).await
+}
+
+/// Start a server on `dir`, letting the test tweak the config first.
+async fn start_with(
+    dir: std::path::PathBuf,
+    tweak: impl FnOnce(&mut Config),
+) -> (String, std::path::PathBuf) {
+    let mut cfg = Config {
         music_dir: dir.join("music"),
         db_path: dir.join("db.sqlite"),
         bind: String::new(),
         static_dir: dir.join("missing-static"),
         ytdlp: "/nonexistent/yt-dlp".into(),
+        idle_timeout: std::time::Duration::from_secs(120),
+        download_timeout: std::time::Duration::from_secs(900),
     };
+    tweak(&mut cfg);
     let (router, _) = app(cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
@@ -226,6 +237,8 @@ async fn spa_fallback() {
         bind: String::new(),
         static_dir: site,
         ytdlp: "yt-dlp".into(),
+        idle_timeout: std::time::Duration::from_secs(120),
+        download_timeout: std::time::Duration::from_secs(900),
     };
     let (router, _) = app(cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -645,5 +658,150 @@ async fn dj_of_day_from_phase2_db() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(rows, [("Ann".to_string(), 2), ("Bob".to_string(), 2)]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn flood_of_queue_actions_is_limited() {
+    let (addr, dir) = start_in(phase2_dir("flood")).await;
+    let (mut a, _) = join(&addr, "Toby").await;
+    for _ in 0..15 {
+        send(&mut a, json!({ "type": "enqueue", "track_id": A })).await;
+    }
+    send(&mut a, json!({ "type": "ping", "t0": 1.0 })).await;
+    let (mut added, quiet) = (0, std::time::Duration::from_millis(300));
+    while let Ok(m) = tokio::time::timeout(quiet, next_json(&mut a)).await {
+        assert_ne!(m["type"], "error", "excess is dropped silently: {m}");
+        if is_chat(&m, "event", "Toby", "added Song A") {
+            added += 1;
+        }
+    }
+    assert_eq!(added, 10);
+    let r = http(&addr, "GET /api/state HTTP/1.1").await;
+    assert_eq!(r.matches(r#""queue_id""#).count(), 10, "current + 9 queued");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn silent_client_is_dropped() {
+    let (addr, dir) = start_with(fresh_dir("idle"), |c| {
+        c.idle_timeout = std::time::Duration::from_millis(500)
+    })
+    .await;
+    let (mut silent, _) = join(&addr, "Ghost").await;
+    let (mut live, _) = join(&addr, "Toby").await;
+    let started = std::time::Instant::now();
+    let mut left = false;
+    // The live client pings (like the real one) while the silent one says nothing.
+    while !left && started.elapsed() < std::time::Duration::from_secs(5) {
+        send(&mut live, json!({ "type": "ping", "t0": 1.0 })).await;
+        let tick = std::time::Duration::from_millis(100);
+        while let Ok(m) = tokio::time::timeout(tick, next_json(&mut live)).await {
+            left |= is_chat(&m, "event", "Ghost", "left");
+        }
+    }
+    assert!(left, "silent client was not dropped");
+    assert!(started.elapsed() >= std::time::Duration::from_millis(400));
+    // The silent socket is closed; the pinging one is still served.
+    let closed = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while let Some(Ok(m)) = silent.next().await {
+            if m.is_close() {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(closed.is_ok());
+    send(&mut live, json!({ "type": "ping", "t0": 2.0 })).await;
+    wait_for(&mut live, |m| m["type"] == "pong").await;
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn cross_site_websocket_is_refused() {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let (addr, dir) = start("origin").await;
+    let try_origin = |origin: Option<String>| {
+        let mut req = format!("ws://{addr}/ws?name=Toby")
+            .into_client_request()
+            .unwrap();
+        if let Some(o) = origin {
+            req.headers_mut().insert("origin", o.parse().unwrap());
+        }
+        tokio_tungstenite::connect_async(req)
+    };
+    assert!(try_origin(None).await.is_ok(), "no Origin (CLI)");
+    assert!(try_origin(Some(format!("http://{addr}"))).await.is_ok());
+    for bad in [
+        "http://evil.example".to_string(),
+        format!("http://{addr}.evil.example"),
+        "null".to_string(),
+    ] {
+        let err = try_origin(Some(bad.clone())).await.unwrap_err();
+        assert!(err.to_string().contains("403"), "{bad}: {err}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A timed-out download kills yt-dlp's whole process tree and cleans up partial files.
+#[tokio::test]
+async fn download_timeout_kills_process_tree() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = fresh_dir("ytkill");
+    std::fs::create_dir_all(&dir).unwrap();
+    let (pids, script) = (dir.join("pids"), dir.join("fake-yt-dlp"));
+    let music = dir.join("music");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\necho $$ > {p}\nsleep 300 &\necho $! >> {p}\n\
+             touch {m}/jNQXAC9IVzw.webm.part {m}/jNQXAC9IVzw.jpg\nsleep 300\n",
+            p = pids.display(),
+            m = music.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (addr, dir) = start_with(dir, |c| {
+        c.ytdlp = script.display().to_string();
+        c.download_timeout = std::time::Duration::from_secs(1);
+    })
+    .await;
+    let (mut ws, _) = join(&addr, "Toby").await;
+    send(
+        &mut ws,
+        json!({ "type": "add", "url": "https://youtu.be/jNQXAC9IVzw" }),
+    )
+    .await;
+    let m = wait_for(&mut ws, |m| {
+        m["type"] == "job" && m["job"]["status"] == "failed"
+    })
+    .await;
+    assert_eq!(m["job"]["error"], "download timed out");
+
+    let pids: Vec<String> = std::fs::read_to_string(&pids)
+        .unwrap()
+        .lines()
+        .map(String::from)
+        .collect();
+    assert_eq!(pids.len(), 2, "script and its child");
+    // Gone, or a zombie awaiting its (non-us) reaper: either way, not running.
+    let running = |pid: &String| {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .is_ok_and(|s| !s.rsplit(')').next().unwrap_or("").starts_with(" Z"))
+    };
+    for _ in 0..40 {
+        if !pids.iter().any(running) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(!pids.iter().any(running), "still running: {pids:?}");
+    let left: Vec<_> = std::fs::read_dir(&music)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert!(left.is_empty(), "partials left: {left:?}");
     let _ = std::fs::remove_dir_all(dir);
 }
