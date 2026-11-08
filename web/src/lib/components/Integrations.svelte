@@ -102,7 +102,7 @@
 		if (document.visibilityState === 'visible' && document.hasFocus()) return; // you can see it already
 		const n = new Notification('Your track is on', {
 			body: untrack(() => title) ?? '',
-			icon: thumb ? `/art/${encodeURIComponent(trackId!)}.jpg` : '/favicon.svg',
+			icon: thumb ? `/art/${encodeURIComponent(trackId!)}.jpg` : '/icon-192.png',
 			tag: 'cloudberry-track',
 			silent: true // the music is the sound
 		});
