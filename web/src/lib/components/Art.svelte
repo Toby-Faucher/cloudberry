@@ -13,7 +13,7 @@
 	{#if track.thumbnail && !failed}
 		<img src="/art/{encodeURIComponent(track.id)}.jpg" alt="" loading="lazy" onerror={() => (failed = true)} />
 	{:else if big}
-		<Berry bead="19cqi" />
+		<Berry bead="9cqi" opacity={0.55} />
 	{:else}
 		<span aria-hidden="true">{track.title.trim()[0]?.toUpperCase() ?? '♪'}</span>
 	{/if}
@@ -24,9 +24,10 @@
 		width: var(--size);
 		aspect-ratio: 1;
 		flex: none;
-		border-radius: calc(var(--size) * 0.18);
+		border-radius: var(--r-sm);
 		overflow: hidden;
-		background: var(--berry-300);
+		background: var(--surface-2);
+		box-shadow: inset 0 0 0 1px var(--line);
 		display: grid;
 		place-items: center;
 		container-type: inline-size;
@@ -37,10 +38,11 @@
 		object-fit: cover;
 		display: block;
 	}
+	/* No cover: the title's initial, printed in mono. */
 	span {
-		font-family: var(--font-display);
-		font-weight: 700;
-		font-size: 46cqi;
-		color: var(--berry-700);
+		font-family: var(--font-mono);
+		font-weight: 500;
+		font-size: 42cqi;
+		color: var(--ink-2);
 	}
 </style>

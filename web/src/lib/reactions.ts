@@ -1,4 +1,5 @@
-// The wire still carries emoji strings (protocol unchanged); the UI draws a sticker for each.
+// The wire still carries emoji strings (protocol unchanged); the UI draws a pictogram for each
+// (the id is its Icon name). "Sticker" names are kept from Phase 4 so callers and tests stay put.
 import { REACTIONS, type Emoji } from './types';
 
 export type StickerId = 'flame' | 'laugh' | 'heart' | 'clap' | 'party' | 'zzz';

@@ -122,7 +122,7 @@ export function enter(el: HTMLElement, params: MotionParams & { smear?: boolean;
 
 const PRESSABLE = 'button:not(:disabled), [role="button"]:not([aria-disabled="true"]), a.btn';
 
-/** Squash on press, springy overshoot on release. Call once; returns the uninstaller. */
+/** Key travel: a short, linear-feeling dip on press and a quick return. No overshoot. */
 export function installPress(root: Document | HTMLElement = document): () => void {
 	if (reduced) return () => {};
 	let held: HTMLElement | null = null;
@@ -130,13 +130,13 @@ export function installPress(root: Document | HTMLElement = document): () => voi
 		const el = (e.target as Element | null)?.closest<HTMLElement>(PRESSABLE);
 		if (!el || el.dataset.noPress !== undefined) return;
 		held = el;
-		motion(el, { scaleX: 1.06, scaleY: 0.9, duration: 120, ease: 'outQuad', clear: false });
+		motion(el, { scale: 0.96, duration: 50, ease: 'outQuad', clear: false });
 	};
 	const up = () => {
 		const el = held;
 		held = null;
 		if (!el) return;
-		motion(el, { scaleX: [1.06, 0.97, 1], scaleY: [0.9, 1.06, 1], duration: 420, ease: 'outElastic(1, .55)' });
+		motion(el, { scale: [0.96, 1], duration: 140, ease: 'outQuart' });
 	};
 	const keyDown = (e: Event) => {
 		const k = e as KeyboardEvent;
@@ -158,20 +158,13 @@ export function installPress(root: Document | HTMLElement = document): () => voi
 
 // --- small named moments ---------------------------------------------------------------
 
-/** "Hey!" wiggle: a little hop and shake (pokes, hold-to-skip hint). */
+/** Buzz: a tight horizontal shake, like a device vibrating (pokes, hold-to-skip hint). */
 export const wiggle = (el: HTMLElement | null | undefined) =>
-	smearAnimate(el, {
-		y: [0, -10, 0, -4, 0],
-		x: [0, -7, 7, -5, 4, 0],
-		rotate: [0, -14, 12, -8, 5, 0],
-		duration: 620,
-		ease: 'outQuad'
-	});
+	smearAnimate(el, { x: [0, -4, 4, -3, 3, -1, 0], duration: 300, ease: 'linear' });
 
-/** Quick hop (someone reacted). */
-export const bounce = (el: HTMLElement | null | undefined) =>
-	motion(el, { y: [0, -7, 0], scaleY: [1, 1.08, 0.94, 1], duration: 420, ease: 'outQuad' });
+/** Quick dip (someone reacted). */
+export const bounce = (el: HTMLElement | null | undefined) => motion(el, { y: [0, -3, 0], duration: 220, ease: 'outQuad' });
 
-/** Pop for counters and chips whose value just changed. */
-export const pop = (el: HTMLElement | null | undefined, amount = 0.12) =>
-	motion(el, { scale: [1 + amount, 1], duration: 380, ease: 'outBack(3)' });
+/** Tick for counters and readouts whose value just changed. */
+export const pop = (el: HTMLElement | null | undefined, amount = 0.06) =>
+	motion(el, { scale: [1 + amount, 1], duration: 180, ease: 'outQuart' });

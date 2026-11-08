@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from '#lib/icons/Icon.svelte';
-	import { hue, initials } from '#lib/util.ts';
+	import { initials } from '#lib/util.ts';
 	import { ui } from '#lib/ui.svelte.ts';
 
 	/** Decorative by default: the name is almost always printed next to it. `crown`: show the DJ-of-the-day
@@ -9,11 +9,12 @@
 	const dj = $derived(crown && ui.dj !== null && ui.dj === name);
 </script>
 
-<span class="avatar" class:me class:small={size < 24} style:--h={hue(name)} style:--s="{size}px" aria-hidden="true"
+<span class="avatar" class:me class:small={size < 24} style:--s="{size}px" aria-hidden="true"
 	>{initials(name)}{#if dj}<span class="crown"><Icon name="crown" size={size < 24 ? 11 : Math.round(size * 0.52)} /></span>{/if}</span
 >
 
 <style>
+	/* A small printed tile: mono initials, monochrome. You get an orange lamp in the corner. */
 	.avatar {
 		position: relative;
 		display: inline-grid;
@@ -21,42 +22,40 @@
 		flex: none;
 		width: var(--s);
 		height: var(--s);
-		border-radius: 50%;
-		font-size: calc(var(--s) * 0.36);
-		font-weight: 650;
-		letter-spacing: 0.02em;
+		border-radius: var(--r-sm);
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: calc(var(--s) * 0.34);
+		font-weight: 500;
 		line-height: 1;
-		/* Fixed L/C, hue per name: dark-on-light passes AA in both themes. */
-		color: oklch(0.34 0.09 var(--h));
-		background: oklch(0.88 0.075 var(--h));
+		color: var(--ink);
+		background: var(--key);
+		box-shadow: inset 0 0 0 1px var(--line-2);
 		user-select: none;
 	}
-	.me {
-		box-shadow: 0 0 0 2px var(--accent-line);
+	.me::after {
+		content: '';
+		position: absolute;
+		right: 2px;
+		bottom: 2px;
+		width: max(3px, calc(var(--s) * 0.14));
+		height: max(3px, calc(var(--s) * 0.14));
+		background: var(--led);
 	}
 	.crown {
 		position: absolute;
-		top: calc(var(--s) * -0.42);
+		top: calc(var(--s) * -0.5);
 		left: 50%;
 		translate: -50% 0;
-		rotate: -12deg;
 		display: grid;
-		color: var(--berry-500);
-		filter: drop-shadow(0 2px 0 var(--berry-700));
+		color: var(--accent);
 		pointer-events: none;
 	}
 	/* Tiny avatars sit in text lines: the crown perches on the shoulder instead of on top. */
 	.small .crown {
-		top: -6px;
+		top: -7px;
 		left: auto;
 		right: -7px;
 		translate: none;
-		rotate: 20deg;
-	}
-	@media (prefers-color-scheme: dark) {
-		.avatar {
-			color: oklch(0.92 0.06 var(--h));
-			background: oklch(0.42 0.08 var(--h));
-		}
 	}
 </style>

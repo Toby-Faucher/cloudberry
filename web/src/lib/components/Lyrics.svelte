@@ -62,30 +62,26 @@
 <style>
 	.lyrics {
 		position: relative;
-		height: 7.4rem;
-		margin: 14px -8px 0;
+		height: 7rem;
+		margin: 12px 4px 0;
 		overflow: hidden;
-		text-align: center;
 		mask-image: linear-gradient(transparent, #000 26%, #000 64%, transparent);
 	}
 	ol {
 		list-style: none;
 		margin: 0;
-		padding: 0 8px;
-		transition: transform 520ms var(--ease-out);
+		padding: 0;
+		transition: transform 360ms var(--ease-out);
 	}
 	li {
-		padding: 3px 0;
-		font-size: 0.95rem;
+		padding: 2px 0;
+		font-size: 0.9375rem;
 		line-height: 1.35;
 		color: var(--ink-3);
-		text-wrap: balance;
-		transition:
-			color 300ms var(--ease-out),
-			opacity 300ms var(--ease-out);
+		transition: color 200ms var(--ease-out);
 	}
 	li.past {
-		opacity: 0.6;
+		color: color-mix(in oklab, var(--ink-3) 60%, transparent);
 	}
 	li.now {
 		color: var(--ink);

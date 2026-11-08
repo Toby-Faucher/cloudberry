@@ -2,36 +2,37 @@
 	import { REACTION_MS, type Station } from '#lib/station.svelte.ts';
 	import { reducedMotion } from '#lib/util.ts';
 	import { smearAnimate } from '#lib/motion/motion.ts';
-	import Sticker from '#lib/icons/Sticker.svelte';
+	import { stickerFor } from '#lib/reactions.ts';
+	import Icon from '#lib/icons/Icon.svelte';
 
-	/** Overlay for the now-playing art: incoming reactions drift up and fade. */
+	/** Overlay for the screen: incoming reactions rise fast and fade, like readouts scrolling off. */
 	let { station }: { station: Station } = $props();
 	const latest = $derived(station.reactions.at(-1));
+	const glyph = (emoji: string) => stickerFor(emoji)?.id ?? 'heart';
 
-	/** Pops up fast (smeared), then drifts and fades. */
+	/** A quick, straight rise (smeared), then a fade. */
 	function rise(el: HTMLElement, drift: number) {
 		smearAnimate(el, {
-			y: [18, -250],
-			x: [0, drift * 46],
-			scale: [0.4, 1.15, 1, 1, 0.9],
-			opacity: [0, 1, 1, 1, 1, 0],
-			duration: REACTION_MS,
-			ease: 'outExpo',
+			y: [24, -170],
+			x: [0, drift * 14],
+			opacity: [0, 1, 1, 1, 0],
+			duration: Math.min(REACTION_MS, 1600),
+			ease: 'outQuart',
 			clear: false
 		});
 	}
 </script>
 
-<div class="layer" aria-hidden="true" style:--ms="{REACTION_MS}ms">
+<div class="layer" aria-hidden="true">
 	{#if reducedMotion}
 		{#if latest}
-			<span class="badge"><Sticker emoji={latest.emoji} size={26} /> <span>{latest.mine ? 'You' : latest.name}</span></span>
+			<span class="tag"><span class="chip"><Icon name={glyph(latest.emoji)} size={14} /></span><span class="who">{latest.mine ? 'You' : latest.name}</span></span>
 		{/if}
 	{:else}
 		{#each station.reactions as r (r.key)}
 			<span class="float" style:--x={r.x}>
-				<span class="fly" use:rise={r.drift}>
-					<Sticker emoji={r.emoji} size={52} />
+				<span class="tag fly" use:rise={r.drift}>
+					<span class="chip"><Icon name={glyph(r.emoji)} size={18} /></span>
 					<span class="who">{r.mine ? 'You' : r.name}</span>
 				</span>
 			</span>
@@ -48,42 +49,49 @@
 	}
 	.float {
 		position: absolute;
-		bottom: 8%;
-		left: calc(12% + var(--x) * 76%);
-		translate: -50% 0;
+		bottom: 15%;
+		left: calc(14% + var(--x) * 64%);
 	}
 	.fly {
-		display: grid;
-		justify-items: center;
-		gap: 2px;
 		opacity: 0;
-		will-change: translate, scale, opacity;
+		will-change: translate, opacity;
 	}
-	/* Name tag under the sticker: a tiny ink label with the same white cut. */
-	.who {
-		font-family: var(--font-display);
-		font-size: 0.74rem;
-		font-weight: 650;
-		padding: 1px 8px;
+	/* An orange key-cap with the pictogram, and a printed name strip beside it. */
+	.tag {
+		display: inline-flex;
+		align-items: stretch;
 		border-radius: var(--r-sm);
+		overflow: hidden;
+		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.12);
+	}
+	.chip {
+		display: grid;
+		place-items: center;
+		width: 30px;
+		height: 30px;
+		background: var(--accent);
+		color: #151515;
+	}
+	.who {
+		display: grid;
+		align-items: center;
+		padding: 0 7px;
 		background: var(--ink);
 		color: var(--surface);
-		box-shadow: 0 0 0 2px var(--die);
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.625rem;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
 		white-space: nowrap;
 	}
-	.badge {
+	.layer > .tag {
 		position: absolute;
 		left: 12px;
-		bottom: 12px;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 3px 10px 3px 6px;
-		border-radius: var(--r-sm);
-		background: var(--ink);
-		color: var(--surface);
-		box-shadow: 0 0 0 2px var(--die);
-		font-size: 0.8rem;
-		font-weight: 600;
+		bottom: 56px; /* above the screen's soft keys */
+	}
+	.layer > .tag .chip {
+		width: 24px;
+		height: 24px;
 	}
 </style>

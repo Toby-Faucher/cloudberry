@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { flip } from 'svelte/animate';
 	import { fly, fade } from 'svelte/transition';
-	import { cubicOut } from 'svelte/easing';
+	import { quartOut } from 'svelte/easing';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { CircleAlert, ListMusic, ListPlus } from '@lucide/svelte';
 	import Icon from '#lib/icons/Icon.svelte';
 	import Avatar from './Avatar.svelte';
 	import { dur, isYouTubeUrl } from '#lib/util.ts';
@@ -40,7 +39,7 @@
 
 <section aria-label="Add a track">
 	<form class="add" class:invalid onsubmit={submit}>
-		<label for="add-url" class="sr-only">YouTube link</label>
+		<label for="add-url" class="prefix label">Link</label>
 		<input
 			id="add-url"
 			type="url"
@@ -54,14 +53,14 @@
 			}}
 		/>
 		<button type="submit" disabled={!url.trim()}>
-			<Icon name="plus" size={18} /> Add
+			<Icon name="plus" size={16} /> Add
 		</button>
 	</form>
 	{#if invalid}
 		<p class="hint" transition:fade={{ duration: dur(150) }}>That's not a YouTube link. Grab one from youtube.com or youtu.be.</p>
 	{:else if station.addNote}
 		<p class="hint" class:note={!station.addNote.error} role={station.addNote.error ? 'alert' : 'status'} transition:fade={{ duration: dur(150) }}>
-			{#if station.addNote.error}<CircleAlert size={14} />{:else}<span class="spinner"></span>{/if}
+			{#if station.addNote.error}<Icon name="alert" size={14} />{:else}<span class="led on blink"></span>{/if}
 			{station.addNote.text}
 		</p>
 	{/if}
@@ -72,12 +71,12 @@
 				<li
 					class="job {row.kind === 'job' ? row.job.status : row.queued || row.current ? 'downloading' : 'done'}"
 					animate:flip={{ duration: dur(300) }}
-					in:fly={{ y: -6, duration: dur(260), easing: cubicOut }}
-					out:fade={{ duration: dur(200) }}
+					in:fly={{ y: -4, duration: dur(180), easing: quartOut }}
+					out:fade={{ duration: dur(140) }}
 				>
 				{#if row.kind === 'playlist'}
 					{@const busy = row.queued > 0 || !!row.current}
-					<span class="state">{#if busy}<ListMusic size={14} />{:else}<Icon name="check" size={14} />{/if}</span>
+					<span class="state">{#if busy}<Icon name="list" size={16} />{:else}<Icon name="check" size={16} />{/if}</span>
 					<span class="what">
 						<span class="name">{row.title}</span>
 						<span class="sub">
@@ -94,7 +93,7 @@
 							title="Cancel the rest ({row.queued} not started)"
 							onclick={() => station.send({ type: 'cancel_playlist', playlist_id: row.id })}
 						>
-							<Icon name="close" size={16} />
+							<Icon name="close" size={14} />
 						</button>
 					{/if}
 					{#if busy}
@@ -104,9 +103,10 @@
 					{@const job = row.job}
 					{@const list = hintFor(job)}
 					<span class="state">
-						{#if job.status === 'done'}<Icon name="check" size={14} />{:else if job.status === 'failed'}<CircleAlert
-								size={14}
-							/>{:else}<span class="spinner"></span>{/if}
+						{#if job.status === 'done'}<Icon name="check" size={16} />{:else if job.status === 'failed'}<Icon
+								name="alert"
+								size={16}
+							/>{:else}<span class="led on blink"></span>{/if}
 					</span>
 					<span class="what">
 						<span class="name">{job.title ?? job.url}</span>
@@ -119,7 +119,7 @@
 					<Avatar name={job.added_by} size={22} />
 					{#if list}
 						<button class="whole" onclick={() => addWhole(job, list)}>
-							<ListPlus size={15} /> Add the whole playlist?
+							<Icon name="list-plus" size={16} /> Add the whole playlist?
 						</button>
 					{/if}
 					{#if job.status === 'downloading' || job.status === 'queued'}
@@ -133,37 +133,41 @@
 </section>
 
 <style>
-	/* A cream slot stuck on the bog; its inner edge lights up berry when you're in it. */
+	/* The input slot: a printed "Link" tag, the field, and a graphite Add key. */
 	.add {
 		display: flex;
-		gap: 6px;
-		padding: 6px;
-		border-radius: 18px;
-		background: var(--surface);
-		color: var(--ink);
-		box-shadow:
-			inset 0 0 0 3px transparent,
-			var(--sticker);
-		transition: box-shadow 160ms var(--ease-out);
+		align-items: center;
+		height: 52px;
+		padding: 5px 5px 5px 0;
+		border-radius: var(--r-md);
+		background: var(--key);
+		box-shadow: inset 0 0 0 1px var(--line-2);
+		transition: box-shadow 120ms var(--ease-out);
 	}
 	.add:focus-within {
-		box-shadow:
-			inset 0 0 0 3px var(--accent-line),
-			var(--sticker);
+		box-shadow: inset 0 0 0 1px var(--ink);
 	}
 	.add.invalid {
-		box-shadow:
-			inset 0 0 0 3px var(--danger),
-			var(--sticker);
+		box-shadow: inset 0 0 0 1px var(--danger);
+	}
+	.prefix {
+		align-self: stretch;
+		display: grid;
+		place-items: center;
+		padding: 0 14px;
+		margin-right: 4px;
+		border-right: 1px solid var(--line);
+		color: var(--ink-3);
 	}
 	input {
 		flex: 1;
 		min-width: 0;
+		height: 100%;
 		border: 0;
 		background: transparent;
-		padding: 10px 12px;
+		padding: 0 8px;
 		outline: none;
-		font-size: 1rem;
+		font-size: 0.9375rem;
 	}
 	input::placeholder {
 		color: var(--ink-3);
@@ -172,40 +176,29 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		min-height: 46px;
-		padding: 0 18px;
-		border-radius: 12px;
-		background: var(--accent);
-		color: var(--on-accent);
-		font-family: var(--font-display);
-		font-size: 1.05rem;
-		font-weight: 650;
-		box-shadow: var(--lip);
+		height: 100%;
+		padding: 0 16px;
+		border-radius: var(--r-sm);
+		background: var(--ink);
+		color: var(--surface);
+		font-weight: 600;
+		font-size: 0.875rem;
 		transition:
-			opacity 160ms var(--ease-out),
-			background-color 160ms var(--ease-out);
-	}
-	.add button:hover:not(:disabled) {
-		background: var(--accent-hover);
+			opacity 120ms var(--ease-out),
+			background-color 120ms var(--ease-out);
 	}
 	.add button:disabled {
-		opacity: 0.4;
+		opacity: 0.3;
 		cursor: not-allowed;
-		box-shadow: none;
 	}
-	/* Sits on the bog, so it gets its own cream tag to stay readable. */
 	.hint {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		width: fit-content;
-		margin: 16px 0 0;
-		padding: 6px 12px;
-		border-radius: 10px;
-		background: var(--surface);
-		box-shadow: 0 4px 0 var(--shade);
-		font-size: 0.85rem;
-		font-weight: 550;
+		gap: 8px;
+		margin: 10px 0 0;
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.75rem;
 		color: var(--danger);
 	}
 	.hint.note {
@@ -216,19 +209,20 @@
 		margin-left: auto;
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
-		min-height: 36px;
-		padding: 0 12px;
-		border-radius: 10px;
-		background: var(--accent-soft);
-		color: var(--accent-ink);
-		font-weight: 600;
-		font-size: 0.82rem;
+		gap: 6px;
+		height: 32px;
+		padding: 0 10px;
+		border-radius: var(--r-md);
+		box-shadow: inset 0 0 0 1px var(--line-2);
+		color: var(--ink);
+		font-weight: 550;
+		font-size: 0.8125rem;
 		white-space: nowrap;
 	}
-	.whole:hover {
-		background: var(--accent);
-		color: var(--on-accent);
+	@media (hover: hover) {
+		.whole:hover {
+			background: var(--surface-2);
+		}
 	}
 	.cancel {
 		flex: none;
@@ -237,74 +231,56 @@
 
 	.jobs {
 		list-style: none;
-		margin: 18px 0 0;
+		margin: 12px 0 0;
 		padding: 0;
-		display: grid;
-		gap: 10px;
+		border-top: 1px solid var(--line);
 	}
 	.job {
 		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		padding: 10px 14px;
-		border-radius: var(--r-md);
-		background: var(--surface);
-		color: var(--ink);
-		box-shadow: 0 4px 0 var(--shade);
-		overflow: hidden;
-		font-size: 0.88rem;
+		min-height: 52px;
+		padding: 8px 0;
+		border-bottom: 1px solid var(--line);
+		font-size: 0.875rem;
 	}
 	.pct {
 		flex: none;
-		font-family: var(--font-display);
-		font-weight: 650;
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
 		color: var(--ink-2);
 	}
 	.state {
 		display: grid;
 		place-items: center;
-		width: 22px;
-		height: 22px;
-		border-radius: 50%;
+		width: 20px;
 		flex: none;
-		color: var(--accent-ink);
-		background: var(--accent-soft);
+		color: var(--ink-2);
 	}
 	.failed .state {
 		color: var(--danger);
-		background: color-mix(in oklab, var(--danger) 14%, transparent);
-	}
-	.spinner {
-		width: 12px;
-		height: 12px;
-		border-radius: 50%;
-		border: 2px solid currentColor;
-		border-right-color: transparent;
-		animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			transform: rotate(1turn);
-		}
 	}
 	.what {
 		flex: 1;
 		min-width: 0;
 		display: grid;
+		gap: 2px;
 	}
 	.name {
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		font-weight: 600;
+		font-weight: 550;
 	}
 	.sub {
 		display: flex;
 		gap: 10px;
 		min-width: 0;
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.6875rem;
 		color: var(--ink-2);
-		font-size: 0.8rem;
 	}
 	.err,
 	.failed .sub {
@@ -314,14 +290,14 @@
 		position: absolute;
 		left: 0;
 		right: 0;
-		bottom: 0;
-		height: 4px;
+		bottom: -1px;
+		height: 2px;
 	}
 	.bar span {
 		display: block;
 		height: 100%;
 		background: var(--accent);
 		transform-origin: left;
-		transition: transform 400ms var(--ease-out);
+		transition: transform 300ms var(--ease-out);
 	}
 </style>

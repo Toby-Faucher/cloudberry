@@ -6,7 +6,6 @@
 	import { ui } from '#lib/ui.svelte.ts';
 	import { dur } from '#lib/util.ts';
 	import { motion, pop, smearAnimate } from '#lib/motion/motion.ts';
-	import Avatar from './Avatar.svelte';
 	import Icon from '#lib/icons/Icon.svelte';
 
 	let { station, onclose }: { station: Station; onclose: () => void } = $props();
@@ -23,7 +22,7 @@
 	let unseen = $state(0);
 	let atBottom = true;
 
-	const clock = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+	const clock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); // a log reads in 24 h
 	const time = (at: number) => clock.format(at);
 	const isMine = (m: ChatMessage) => m.kind === 'user' && m.name === station.name;
 
@@ -96,53 +95,43 @@
 	let ready = false;
 	onMount(() => void tick().then(() => (ready = true)));
 
-	// Messages landing in the same frame (a burst) stagger instead of all moving at once.
+	// Messages landing in the same frame (a burst) step in one after another.
 	let burst = 0;
 	function nextDelay() {
 		if (burst === 0) requestAnimationFrame(() => (burst = 0));
-		return Math.min(burst++, 6) * 70;
+		return Math.min(burst++, 6) * 45;
 	}
 
-	/** A message arrives from the sender's side with a little overshoot. */
+	/** A line prints in from the sender's side: short, straight, no overshoot. */
 	function arrive(el: HTMLElement, mine: boolean) {
 		if (!ready) return;
-		const from = mine ? 56 : -56;
-		motion(el, { x: [from, 0], scale: [0.92, 1], opacity: [0, 1], duration: 520, delay: nextDelay(), ease: 'outBack(1.7)' });
+		motion(el, { x: [mine ? 14 : -14, 0], opacity: [0, 1], duration: 200, delay: nextDelay(), ease: 'outQuart' });
 	}
-	/** Ours: a fresh send pops out of the input; one from another tab of ours arrives normally. */
+	/** Ours: a fresh send slides up out of the input; one from another tab of ours arrives normally. */
 	function mineIn(el: HTMLElement, sending: boolean) {
 		if (sending) sendPop(el);
 		else arrive(el, true);
 	}
-	/** Event lines stay quiet: a fade and a small wiggle, nothing that pulls the eye. */
+	/** Event lines stay quiet: they just print. */
 	function quiet(el: HTMLElement) {
 		if (!ready) return;
-		motion(el, { opacity: [0, 1], rotate: [0, -1.5, 1.2, -0.6, 0], duration: 520, delay: nextDelay(), ease: 'outQuad' });
+		motion(el, { opacity: [0, 1], duration: 160, delay: nextDelay(), ease: 'linear' });
 	}
-	/** Sending: the bubble pops out of the input, squashed and smeared, into the list. */
+	/** Sending: the line travels up from the input into the log, smeared on the way. */
 	function sendPop(el: HTMLElement) {
 		const from = input?.getBoundingClientRect();
 		const to = el.getBoundingClientRect();
-		const dx = from ? from.left + from.width / 2 - (to.left + to.width / 2) : 0;
 		const dy = from ? from.top + from.height / 2 - (to.top + to.height / 2) : 40;
-		smearAnimate(el, {
-			x: [dx * 0.6, 0],
-			y: [dy, 0],
-			scaleX: [0.55, 1.1, 1],
-			scaleY: [1.35, 0.92, 1],
-			opacity: [0, 1],
-			duration: 560,
-			ease: 'outBack(1.4)'
-		});
+		smearAnimate(el, { y: [dy, 0], opacity: [0.4, 1], duration: 260, ease: 'outQuart' });
 	}
-	/** "N new" pill: bounces in, then hops each time the count goes up. */
+	/** "N new" strip: slides up, then ticks each time the count goes up. */
 	function pillIn(el: HTMLElement) {
-		motion(el, { y: [28, 0], scale: [0.5, 1], opacity: [0, 1], duration: 520, ease: 'outBack(2.6)' });
+		motion(el, { y: [12, 0], opacity: [0, 1], duration: 180, ease: 'outQuart' });
 	}
 	let pill = $state<HTMLElement>();
 	let lastUnseen = 0;
 	$effect(() => {
-		if (unseen > lastUnseen && lastUnseen > 0) pop(pill, 0.18);
+		if (unseen > lastUnseen && lastUnseen > 0) pop(pill, 0.06);
 		lastUnseen = unseen;
 	});
 
@@ -150,8 +139,8 @@
 		e.preventDefault();
 		if (!station.sendChat(draft)) return;
 		draft = '';
-		// The input gives a little bounce as the message leaves it.
-		motion(compose, { scaleX: [1, 0.96, 1.015, 1], scaleY: [1, 1.08, 0.98, 1], duration: 440, ease: 'outQuad' });
+		// The field dips like a key as the line leaves it.
+		motion(compose, { y: [2, 0], duration: 140, ease: 'outQuart' });
 	}
 	function keydown(e: KeyboardEvent) {
 		if (e.key === 'Escape' && !draft) (e.currentTarget as HTMLElement).blur();
@@ -174,49 +163,50 @@
 			{#if row.mine}
 				<!-- Pending and echoed are one element (same key, same branch): it settles, never re-enters. -->
 				{@const m = row.item?.kind === 'msg' ? row.item.m : null}
+				{@const cont = !!prev?.mine && (!m || !prevMsg || continues(m, prevMsg))}
 				<div
-					class="mine"
-					class:cont={!!prev?.mine && (!m || !prevMsg || continues(m, prevMsg))}
+					class="line mine"
+					class:cont
 					class:pending={row.pend && !row.pend.failed}
 					class:failed={row.pend?.failed}
 					class:echoed={row.echoed}
 					use:mineIn={!!row.pend}
 				>
-					<p class="bubble">{row.text}</p>
-					{#if row.pend?.failed}
-						<button class="retry" onclick={() => row.pend && station.retryChat(row.pend.key)}>Didn't send. Try again</button>
-					{:else if row.pend}
-						<span class="sending" aria-label="Sending"><i></i><i></i><i></i></span>
-					{:else if m}
-						<time datetime={new Date(m.at).toISOString()}>{time(m.at)}</time>
-					{/if}
+					{#if m && !cont}<time datetime={new Date(m.at).toISOString()}>{time(m.at)}</time>{:else}<span class="t"></span>{/if}
+					<span class="who"><span class="tick" aria-hidden="true"></span>{cont ? '' : 'You'}</span>
+					<p class="text">
+						{row.text}
+						{#if row.pend?.failed}
+							<button class="retry" onclick={() => row.pend && station.retryChat(row.pend.key)}>Didn't send. Try again</button>
+						{:else if row.pend}
+							<span class="sr-only">Sending</span>
+						{/if}
+					</p>
 				</div>
 			{:else if row.item?.kind === 'presence'}
 				{@const item = row.item}
-				<p class="event" use:quiet>
-					<span>{item.text}</span>
+				<p class="line event" use:quiet>
 					<time datetime={new Date(item.at).toISOString()}>{time(item.at)}</time>
+					<span class="text">{item.text}</span>
 				</p>
 			{:else if row.item?.m.kind === 'event'}
 				{@const m = row.item.m}
-				<p class="event" use:quiet>
-					<span>{m.name} {m.text}</span>
+				<p class="line event" use:quiet>
 					<time datetime={new Date(m.at).toISOString()}>{time(m.at)}</time>
+					<span class="text">{m.name} {m.text}</span>
 				</p>
 			{:else if row.item && continues(row.item.m, prevMsg)}
 				{@const m = row.item.m}
-				<div class="theirs cont" use:arrive={false}><p class="bubble">{m.text}</p></div>
+				<div class="line theirs cont" use:arrive={false}>
+					<span class="t"></span><span class="who"></span>
+					<p class="text">{m.text}</p>
+				</div>
 			{:else if row.item}
 				{@const m = row.item.m}
-				<div class="theirs first" use:arrive={false}>
-					<Avatar name={m.name} size={30} />
-					<div class="body">
-						<p class="meta">
-							<strong>{m.name}</strong>
-							<time datetime={new Date(m.at).toISOString()}>{time(m.at)}</time>
-						</p>
-						<p class="bubble">{m.text}</p>
-					</div>
+				<div class="line theirs" use:arrive={false}>
+					<time datetime={new Date(m.at).toISOString()}>{time(m.at)}</time>
+					<strong class="who" title={m.name}>{m.name}</strong>
+					<p class="text">{m.text}</p>
 				</div>
 			{/if}
 		{/each}
@@ -224,13 +214,14 @@
 
 	{#if unseen}
 		<button class="pill" bind:this={pill} use:pillIn onclick={() => toBottom(true)}>
-			<Icon name="down" size={15} />
-			{unseen} new
+			<Icon name="down" size={14} />
+			<span class="num">{unseen}</span> new
 		</button>
 	{/if}
 
 	<form class="compose" bind:this={compose} onsubmit={submit}>
 		<label for="chat-input" class="sr-only">Message</label>
+		<span class="prompt" aria-hidden="true">&gt;</span>
 		<input
 			id="chat-input"
 			bind:this={input}
@@ -241,7 +232,7 @@
 			placeholder="Say something to the room"
 			onkeydown={keydown}
 		/>
-		<button type="submit" class="send" aria-label="Send" disabled={!draft.trim()}><Icon name="send" size={19} /></button>
+		<button type="submit" class="send" aria-label="Send" disabled={!draft.trim()}><Icon name="send" size={18} /></button>
 	</form>
 </div>
 
@@ -258,11 +249,14 @@
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 14px 12px 6px 20px;
+		height: 64px;
+		padding: 0 10px 0 16px;
+		border-bottom: 1px solid var(--line);
 	}
 	header .section-title {
 		margin: 0;
-		color: var(--ink);
+		padding: 0;
+		border: 0;
 	}
 	.scroll {
 		flex: 1;
@@ -270,10 +264,10 @@
 		overflow-y: auto;
 		overflow-x: hidden;
 		overscroll-behavior: contain;
-		padding: 8px 16px 14px;
+		padding: 12px 16px;
 		display: flex;
 		flex-direction: column;
-		scrollbar-color: color-mix(in oklab, var(--ink-3) 45%, transparent) transparent;
+		scrollbar-color: var(--line-2) transparent;
 	}
 	/* Push a short conversation to the bottom, next to the input. */
 	.scroll > :first-child {
@@ -283,150 +277,114 @@
 		margin: 0;
 	}
 	.hello {
-		color: var(--ink-2);
-		font-family: var(--font-display);
-		font-size: 1.05rem;
-		text-align: center;
 		padding: 24px 0;
+		color: var(--ink-2);
+		font-size: 0.9375rem;
 	}
-	.event {
-		display: flex;
-		justify-content: space-between;
-		gap: 10px;
-		margin: 6px 0;
-		padding: 0 4px 0 40px;
+
+	/* A log line: time | who | text, on a fixed grid so everything aligns down the page. */
+	.line {
+		display: grid;
+		grid-template-columns: 2.9rem 4.6rem minmax(0, 1fr);
+		column-gap: 8px;
+		align-items: baseline;
+		padding: 3px 0;
+	}
+	.line:not(.cont) {
+		margin-top: 8px;
+	}
+	time,
+	.t {
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.625rem;
 		color: var(--ink-3);
-		font-size: 0.8rem;
-		line-height: 1.35;
-		transform-origin: left center;
-	}
-	.event span {
-		min-width: 0;
-		overflow-wrap: anywhere;
-	}
-	time {
-		flex: none;
-		color: var(--ink-3);
-		font-size: 0.72rem;
 		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
 	}
-	.bubble {
-		width: fit-content;
-		max-width: 100%;
-		padding: 7px 12px 8px;
-		border-radius: 16px;
-		font-size: 0.92rem;
+	.who {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.8125rem;
+		font-weight: 600;
+	}
+	.text {
+		min-width: 0;
+		font-size: 0.875rem;
 		line-height: 1.4;
 		overflow-wrap: anywhere;
 		white-space: pre-wrap;
 	}
 
-	/* Everyone else: avatar on the left, cream-2 bubbles. */
-	.theirs .bubble {
-		background: var(--surface-2);
-		border-top-left-radius: 6px;
+	/* Events: one quiet mono line under the same time column. */
+	.event {
+		grid-template-columns: 2.9rem minmax(0, 1fr);
+		margin-top: 6px;
 	}
-	.theirs {
-		transform-origin: left bottom;
-	}
-	.theirs.first {
-		display: flex;
-		gap: 10px;
-		margin-top: 12px;
-	}
-	.theirs.cont {
-		margin-top: 4px;
-		padding-left: 40px;
-	}
-	.body {
-		min-width: 0;
-		flex: 1;
-	}
-	.meta {
-		display: flex;
-		align-items: baseline;
-		gap: 8px;
-		margin-bottom: 3px;
-		font-size: 0.82rem;
-	}
-	.meta strong {
-		font-family: var(--font-display);
-		font-weight: 650;
-		font-size: 0.92rem;
+	.event .text {
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.6875rem;
+		line-height: 1.5;
+		color: var(--ink-2);
+		white-space: normal;
 	}
 
-	/* You: right side, berry bubbles. */
-	.mine {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 2px;
-		margin: 12px 0 0 48px;
-		transform-origin: right bottom;
-	}
-	.mine.cont {
-		margin-top: 4px;
-	}
-	.mine.cont time {
-		display: none;
-	}
-	.mine .bubble {
+	/* You: an orange tick in the who column. Pending: the tick blinks hollow until the echo. */
+	.tick {
+		flex: none;
+		width: 6px;
+		height: 6px;
 		background: var(--accent);
-		color: var(--on-accent);
-		border-bottom-right-radius: 6px;
-		transition:
-			background-color 280ms var(--ease-out),
-			color 280ms var(--ease-out);
+		box-shadow: inset 0 0 0 1px var(--led-rim);
 	}
-	/* The server echoed it: the pale pending bubble fills in with a small squash. */
-	.mine.echoed .bubble {
-		animation: settle 380ms var(--ease-out);
+	.mine .who {
+		color: var(--accent-ink);
 	}
-	@keyframes settle {
-		40% {
-			scale: 1.05 0.94;
-		}
-		75% {
-			scale: 0.98 1.03;
-		}
-	}
-	/* Pending: paler until the server echoes it back. */
-	.pending .bubble {
-		background: var(--accent-soft);
-		color: var(--ink);
-		box-shadow: none;
-	}
-	.failed .bubble {
+	.pending .tick {
 		background: transparent;
-		outline: 2px dashed var(--danger);
-		outline-offset: -2px;
+		box-shadow: inset 0 0 0 1.5px var(--accent);
+		animation: tx 0.5s steps(1, end) infinite;
 	}
-	.sending {
-		display: flex;
-		gap: 3px;
-		padding: 2px 4px;
+	.pending .text {
+		color: var(--ink-2);
 	}
-	.sending i {
-		width: 5px;
-		height: 5px;
-		border-radius: 50%;
-		background: var(--ink-3);
-		animation: dot 0.9s ease-in-out infinite;
-	}
-	.sending i:nth-child(2) {
-		animation-delay: 0.15s;
-	}
-	.sending i:nth-child(3) {
-		animation-delay: 0.3s;
-	}
-	@keyframes dot {
+	@keyframes tx {
 		50% {
-			translate: 0 -3px;
+			box-shadow: inset 0 0 0 1.5px transparent;
 		}
+	}
+	/* Echoed back by the server: the tick latches solid with one blink. */
+	.echoed .tick {
+		animation: latch 240ms steps(1, end);
+	}
+	@keyframes latch {
+		33% {
+			background: transparent;
+		}
+		66% {
+			background: var(--accent);
+		}
+	}
+	.failed .tick {
+		background: var(--danger);
+	}
+	.failed .text {
+		color: var(--ink-2);
+		text-decoration: line-through;
+		text-decoration-color: var(--danger);
 	}
 	.retry {
-		font-size: 0.78rem;
-		font-weight: 600;
+		display: block;
+		margin-top: 2px;
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.6875rem;
 		color: var(--danger);
 		text-decoration: underline;
 		text-underline-offset: 3px;
@@ -435,49 +393,43 @@
 	.pill {
 		position: absolute;
 		left: 50%;
-		bottom: 78px;
-		margin-left: -52px;
-		width: 104px;
+		bottom: 76px;
+		translate: -50% 0;
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
 		gap: 6px;
-		padding: 7px 12px;
-		border-radius: 12px;
-		background: var(--accent);
-		color: var(--on-accent);
-		font-family: var(--font-display);
-		font-size: 0.9rem;
-		font-weight: 650;
-		box-shadow:
-			var(--lip),
-			0 0 0 3px var(--die),
-			0 5px 0 3px var(--shade-2);
+		height: 28px;
+		padding: 0 10px;
+		border-radius: var(--r-sm);
+		background: var(--ink);
+		color: var(--surface);
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.6875rem;
 		z-index: 1;
 	}
 	.compose {
 		display: flex;
-		gap: 6px;
-		margin: 6px 12px 12px;
-		padding: 5px;
-		border-radius: 16px;
-		background: var(--surface-2);
-		box-shadow: inset 0 0 0 3px transparent;
-		transition:
-			box-shadow 160ms var(--ease-out),
-			background-color 160ms var(--ease-out);
+		align-items: center;
+		gap: 4px;
+		margin: 0;
+		padding: 10px 10px 10px 16px;
+		border-top: 1px solid var(--line);
 	}
-	.compose:focus-within {
-		box-shadow: inset 0 0 0 3px var(--accent-line);
-		background: var(--surface);
+	.prompt {
+		font-family: var(--font-mono);
+		font-size: 0.8125rem;
+		color: var(--accent-ink);
 	}
 	.compose input {
 		flex: 1;
 		min-width: 0;
+		height: 40px;
 		border: 0;
 		background: transparent;
-		padding: 8px 10px;
+		padding: 0 6px;
 		outline: none;
+		font-size: 0.875rem;
 	}
 	@media (pointer: coarse) {
 		.compose input {
@@ -487,21 +439,21 @@
 	.compose input::placeholder {
 		color: var(--ink-3);
 	}
+	.compose:focus-within {
+		box-shadow: inset 0 2px 0 var(--ink);
+	}
 	.send {
 		display: grid;
 		place-items: center;
-		width: 42px;
-		border-radius: 12px;
-		background: var(--accent);
-		color: var(--on-accent);
-		box-shadow: var(--lip);
-		transition:
-			opacity 160ms,
-			scale 160ms var(--ease-out);
+		width: 40px;
+		height: 40px;
+		border-radius: var(--r-md);
+		background: var(--ink);
+		color: var(--surface);
+		transition: opacity 120ms;
 	}
 	.send:disabled {
 		opacity: 0;
-		scale: 0.6;
 		cursor: default;
 	}
 </style>

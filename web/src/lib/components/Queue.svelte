@@ -3,13 +3,11 @@
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import { dndzone, SHADOW_ITEM_MARKER_PROPERTY_NAME, type DndEvent } from 'svelte-dnd-action';
-	import { ChevronDown, ChevronUp, GripVertical } from '@lucide/svelte';
 	import Icon from '#lib/icons/Icon.svelte';
 	import type { Station } from '#lib/station.svelte.ts';
 	import type { QueueItem } from '#lib/types.ts';
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
-	import Avatar from './Avatar.svelte';
 	import { onMount } from 'svelte';
 	import { smear } from '#lib/motion/smear.ts';
 	import { smearAnimate } from '#lib/motion/motion.ts';
@@ -23,16 +21,16 @@
 	const flipMs = dur(220);
 
 	let list = $state<HTMLElement>();
-	// New rows fling in (smeared) once the list is on screen; the first paint just appears.
+	// New rows slide in (smeared) once the list is on screen; the first paint just appears.
 	let ready = false;
 	onMount(() => (ready = true));
 	function rowIn(el: HTMLElement) {
-		if (ready) smearAnimate(el, { x: [-120, 0], scale: [0.9, 1], opacity: [0, 1], duration: 560 });
+		if (ready) smearAnimate(el, { x: [-80, 0], opacity: [0, 1], duration: 320, ease: 'outQuart' });
 	}
 	function rowOut(node: Element) {
 		return {
-			duration: dur(260),
-			css: (t: number) => `opacity:${t};translate:${(1 - t) * 60}px 0;scale:${0.9 + 0.1 * t}`
+			duration: dur(180),
+			css: (t: number) => `opacity:${t};translate:${(1 - t) * 40}px 0`
 		};
 	}
 	/** Smear rows while the reorder FLIP plays (they move fast, briefly). */
@@ -81,7 +79,7 @@
 
 <section aria-labelledby="queue-h">
 	<h2 class="section-title" id="queue-h">
-		Up next
+		Up next <span class="count num">{String(items.length).padStart(2, '0')}</span>
 	</h2>
 
 	{#if items.length === 0}
@@ -110,14 +108,12 @@
 					out:rowOut
 				>
 					<div class="body" use:rowIn>
-					<span class="grip" aria-hidden="true"><GripVertical size={16} /></span>
+					<span class="idx num" aria-hidden="true"><span class="grip"><Icon name="grip" size={16} /></span><span class="n">{String(i + 1).padStart(2, '0')}</span></span>
 					<Art track={row.q.track} size={40} />
 					<span class="what">
-						<span class="name" title={row.q.track.title}>
-							{#if i === 0}<span class="tag">next</span>{/if}{row.q.track.title}
-						</span>
+						<span class="name" title={row.q.track.title}>{row.q.track.title}</span>
 						<span class="sub">
-							<Avatar name={row.q.added_by} size={18} />
+							{#if i === 0}<span class="deck-tag"><span class="led on"></span>Next</span>{/if}
 							<span class="by">{row.q.added_by}</span>
 							<span class="dur-sm num">{fmtTime(row.q.track.duration_ms)}</span>
 						</span>
@@ -131,7 +127,7 @@
 							disabled={i === 0}
 							onclick={() => move(row, i, i - 1)}
 						>
-							<ChevronUp size={18} />
+							<Icon name="chev-up" size={18} />
 						</button>
 						<button
 							class="icon-btn"
@@ -141,7 +137,7 @@
 							disabled={i === items.length - 1}
 							onclick={() => move(row, i, i + 1)}
 						>
-							<ChevronDown size={18} />
+							<Icon name="chev-down" size={18} />
 						</button>
 						<button
 							class="icon-btn remove"
@@ -163,77 +159,71 @@
 <style>
 	.empty {
 		margin: 0;
-		padding: 18px;
-		border-radius: var(--r-md);
-		border: 3px dashed color-mix(in oklab, var(--on-bg) 45%, transparent);
-		color: var(--on-bg);
-		font-family: var(--font-display);
-		font-size: 1.05rem;
-		font-weight: 550;
-		text-align: center;
+		padding: 24px 0;
+		color: var(--ink-2);
+		font-size: 0.9375rem;
 	}
-	/* Up next: a stack of cream tiles on the bog, each on its own hard drop. */
+	/* Up next: numbered rows on hairlines, like a sequencer's step list. */
 	.list {
 		list-style: none;
-		margin: 0;
+		margin: -12px 0 0;
 		padding: 0;
-		display: grid;
-		gap: 10px;
 	}
 	.list:focus-visible {
 		outline-offset: 4px;
 	}
 	.row {
-		border-radius: var(--r-md);
+		border-bottom: 1px solid var(--line);
 	}
 	.body {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		min-height: 62px;
-		padding: 8px 8px 8px 4px;
-		border-radius: var(--r-md);
-		background: var(--surface);
-		color: var(--ink);
-		box-shadow: 0 4px 0 var(--shade);
-		transition: background-color 160ms var(--ease-out);
+		gap: 14px;
+		min-height: 60px;
+		padding: 10px 4px 10px 0;
+		background: var(--bg);
+		transition: background-color 120ms var(--ease-out);
 	}
-	/* The next track is on deck: berry-soft, die-cut, labelled. */
-	.next .body {
-		background: var(--accent-soft);
-		box-shadow:
-			0 0 0 3px var(--die),
-			0 6px 0 3px var(--shade);
-	}
-	.tag {
-		display: inline-block;
-		margin-right: 8px;
-		padding: 0 8px 1px;
-		border-radius: 6px;
-		background: var(--accent);
-		color: var(--on-accent);
-		font-family: var(--font-display);
-		font-size: 0.85rem;
-		font-weight: 700;
-		rotate: -4deg;
-		vertical-align: 1px;
-	}
-	.dur {
+	.idx {
+		position: relative;
 		flex: none;
-		min-width: 3.2em;
-		padding-right: 8px;
-		text-align: right;
-		font-family: var(--font-display);
-		font-weight: 600;
-		color: var(--ink-2);
+		width: 2.4em;
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--ink-3);
 	}
-	@media (hover: hover) {
-		.row:not(.next):hover .body {
-			background: color-mix(in oklab, var(--surface) 70%, var(--surface-2));
+	.next .idx {
+		color: var(--accent-ink);
+	}
+	.grip {
+		position: absolute;
+		left: -2px;
+		top: 50%;
+		translate: 0 -50%;
+		display: grid;
+		color: var(--ink-2);
+		cursor: grab;
+		opacity: 0;
+		transition: opacity 120ms;
+	}
+	@media (hover: hover) and (pointer: fine) {
+		.row:hover .body {
+			background: color-mix(in oklab, var(--bg) 60%, var(--surface));
 		}
 		.row:hover .grip {
 			opacity: 1;
 		}
+		.row:hover .n {
+			opacity: 0;
+		}
+	}
+	.dur {
+		flex: none;
+		min-width: 3.4em;
+		text-align: right;
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--ink-2);
 	}
 	/* The gap the dragged row will drop into. */
 	.row.shadow {
@@ -241,60 +231,64 @@
 	}
 	.row.shadow .body {
 		background: transparent;
-		box-shadow: none;
-		outline: 3px dashed color-mix(in oklab, var(--on-bg) 60%, transparent);
-		outline-offset: -3px;
+		outline: 1px dashed var(--line-2);
+		outline-offset: -1px;
 	}
 	.row.shadow .body > * {
 		visibility: hidden;
 	}
-	/* The floating clone the library appends to <body>: peeled off, held up. */
+	/* The floating clone the library appends to <body>: lifted off the panel (a real shadow). */
 	:global(.queue-dragged) {
-		box-shadow:
-			0 0 0 3px var(--die),
-			0 12px 0 3px var(--shade) !important;
+		background: var(--surface) !important;
+		box-shadow: var(--shadow-lift) !important;
 		cursor: grabbing;
-		rotate: -2.5deg;
 	}
-	.grip {
-		color: var(--ink-3);
-		cursor: grab;
-		opacity: 0.5;
-		transition: opacity 160ms;
-		display: grid;
+	:global(.queue-dragged .body) {
+		background: var(--surface) !important;
+		padding-left: 8px !important;
 	}
 	.what {
 		flex: 1;
 		min-width: 0;
 		display: grid;
+		gap: 3px;
 	}
 	.name {
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-		font-weight: 600;
+		font-weight: 550;
 	}
 	.sub {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		color: var(--ink-3);
-		font-size: 0.8rem;
+		gap: 10px;
+		font-family: var(--font-mono);
+		font-stretch: 87.5%;
+		font-size: 0.6875rem;
+		color: var(--ink-2);
 		white-space: nowrap;
 		min-width: 0;
+	}
+	.deck-tag {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--accent-ink);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
 	}
 	.by {
 		overflow: hidden;
 		text-overflow: ellipsis;
-		color: var(--ink-2);
 	}
 	/* Row actions: out of the way until you point at or tab into the row. */
 	.actions {
 		display: flex;
 		flex: none;
-		gap: 4px;
+		gap: 2px;
 		opacity: 0;
-		transition: opacity 140ms var(--ease-out);
+		transition: opacity 120ms var(--ease-out);
 	}
 	.row:hover .actions,
 	.row:focus-within .actions {
@@ -306,7 +300,6 @@
 	@media (hover: hover) {
 		.remove:hover:not(:disabled) {
 			color: var(--danger);
-			background: color-mix(in oklab, var(--danger) 12%, transparent);
 		}
 	}
 	@media (pointer: coarse) {
@@ -316,20 +309,20 @@
 		.grip {
 			display: none;
 		}
-		.body {
-			padding-left: 8px;
-		}
 	}
 	/* Phones: the time moves under the title so the row buttons don't squeeze the name away. */
 	.dur-sm {
 		display: none;
 		margin-left: auto;
 		padding-left: 8px;
-		font-family: var(--font-display);
-		font-weight: 600;
-		color: var(--ink-2);
 	}
 	@media (max-width: 560px) {
+		.body {
+			gap: 10px;
+		}
+		.idx {
+			width: 1.8em;
+		}
 		.dur {
 			display: none;
 		}

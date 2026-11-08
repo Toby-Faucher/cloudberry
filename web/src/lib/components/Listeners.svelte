@@ -2,7 +2,7 @@
 	import { Tooltip } from 'bits-ui';
 	import { scale } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
-	import { backOut } from 'svelte/easing';
+	import { quartOut } from 'svelte/easing';
 	import type { Station } from '#lib/station.svelte.ts';
 	import { dur } from '#lib/util.ts';
 	import { ui } from '#lib/ui.svelte.ts';
@@ -40,8 +40,8 @@
 		{#each shown as l (l.id)}
 			<li
 				animate:flip={{ duration: dur(260) }}
-				in:scale={{ start: 0.4, duration: dur(380), easing: backOut }}
-				out:scale={{ start: 0.6, duration: dur(180) }}
+				in:scale={{ start: 0.7, duration: dur(180), easing: quartOut }}
+				out:scale={{ start: 0.7, duration: dur(120) }}
 			>
 				<Tooltip.Root>
 					<Tooltip.Trigger
@@ -50,7 +50,7 @@
 						aria-label={l.id === station.you ? label(l) : `Poke ${label(l)}`}
 						onclick={() => station.poke(l.id)}
 					>
-						<Avatar name={l.name} me={l.id === station.you} size={34} crown />
+						<Avatar name={l.name} me={l.id === station.you} size={28} crown />
 					</Tooltip.Trigger>
 					<Tooltip.Portal>
 						<Tooltip.Content sideOffset={8} class="cb-tip">
@@ -79,66 +79,41 @@
 	.room {
 		display: flex;
 		align-items: center;
-		gap: 10px;
 	}
+	/* A row of printed tiles, not a stack of bubbles. */
 	ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
 		display: flex;
-	}
-	li + li {
-		margin-left: -8px;
+		gap: 4px;
 	}
 	ul :global(.who),
 	ul :global(.more) {
 		position: relative;
 		display: grid;
 		place-items: center;
-		border-radius: 50%;
-		border: 3px solid var(--die);
+		border-radius: var(--r-sm);
 		cursor: default;
-		transition:
-			opacity 300ms var(--ease-out),
-			filter 300ms var(--ease-out),
-			translate 160ms var(--ease-out);
+		transition: opacity 240ms var(--ease-out);
 	}
 	ul :global(.who.pokable) {
 		cursor: pointer;
 	}
 	ul :global(.who.away) {
-		opacity: 0.45;
-		filter: grayscale(0.85);
+		opacity: 0.4;
 	}
 	@media (hover: hover) {
-		ul :global(.who.pokable:hover) {
-			translate: 0 -3px;
-			z-index: 1;
+		ul :global(.who.pokable:hover .avatar) {
+			box-shadow: inset 0 0 0 1px var(--ink);
 		}
 	}
 	ul :global(.more) {
-		width: 38px;
-		height: 38px;
+		width: 28px;
+		height: 28px;
 		background: var(--surface-2);
 		color: var(--ink);
-		font-size: 0.78rem;
-		font-weight: 700;
-	}
-	:global(.cb-tip) {
-		background: var(--ink);
-		color: var(--surface);
-		font-size: 0.8rem;
-		font-weight: 550;
-		padding: 6px 10px;
-		border-radius: 8px;
-		z-index: 50;
-		transform-origin: var(--bits-tooltip-content-transform-origin);
-		animation: tip-in 140ms var(--ease-out);
-	}
-	@keyframes tip-in {
-		from {
-			opacity: 0;
-			transform: scale(0.94);
-		}
+		font-family: var(--font-mono);
+		font-size: 0.625rem;
 	}
 </style>
