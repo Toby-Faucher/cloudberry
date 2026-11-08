@@ -1,0 +1,9 @@
+target
+**/node_modules
+web/build
+web/.svelte-kit
+web/static/visualizer.wasm
+data
+.git
+.claude
+.env

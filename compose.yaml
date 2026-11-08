@@ -1,0 +1,22 @@
+services:
+  cloudberry:
+    build: .
+    # Or, if you publish an image somewhere, use it instead of building:
+    # image: ghcr.io/<you>/cloudberry:latest
+    container_name: cloudberry
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      CLOUDBERRY_MUSIC_DIR: /data/music
+      CLOUDBERRY_DB_PATH: /data/cloudberry.db
+    restart: unless-stopped
+    mem_limit: 256m
+    healthcheck:
+      # No curl in the image: plain HTTP/1.0 request over bash's /dev/tcp.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /api/state HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -n1 <&3 | grep -q ' 200'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
