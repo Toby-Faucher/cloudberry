@@ -7,7 +7,7 @@
 web
 
 ## Users
-Toby and 3–4 coworkers (e.g. William). They have Cloudberry open in a browser tab while working,
+Toby and 3–4 coworkers. They have Cloudberry open in a browser tab while working,
 usually at their desks, sometimes on a phone. Job: listen to the same music at the same moment,
 throw songs into a shared queue, react and chat about what's playing, without leaving their work.
 
