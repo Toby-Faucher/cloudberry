@@ -259,3 +259,96 @@ Single rAF loop owns analysis (one wasm `process` per frame) and exposes a react
 - WebGL2 unavailable → Bloom falls back to a CSS radial-gradient driven by `energy`.
 - Public surface for the rest of the app: `<Visualizer mode={...}/>`, `<Backdrop/>`, `<LeanBack/>`,
   and `startAnalysis(analyser: AnalyserNode)` / `stopAnalysis()`.
+
+---
+
+# Phase 3: game feel (added 2026-11-07; Toby: "cloudberry orange", "a shit load of motion using anime.js",
+# "any place you can add smear motion add it using wasm", "should feel like a game UI, super clear",
+# and approved all ten quirks below)
+
+## Colour: real cloudberry, not generic orange
+Ripe cloudberries are a warm amber-orange (honey-gold in the light, deeper orange in shadow); unripe
+ones blush red. Replace every `#F97316` with tokens:
+```
+--berry-300: #FBC77A   /* highlight, glows */
+--berry-400: #F7AE4A
+--berry-500: #F0912B   /* THE accent: buttons, progress, bars */
+--berry-600: #D9741A   /* hover/pressed */
+--berry-700: #A9550F   /* accent text on light bg (verify ≥ 4.5:1) */
+--blush-500: #E0553A   /* unripe blush: heat states — combos, hold-to-skip near completion, live dot */
+```
+`--track-tint` blends toward `--berry-500`. Visualizer fallback colour = `--berry-500`. Check contrast in
+light and dark; dark mode may use `--berry-400` for accent text.
+
+## Game-UI direction: super clear
+Think polished game HUD, not dashboard: big confident type for the current song, obvious primary
+actions, strong states (hover/press/disabled/active are unmistakable), chunky hit targets, icon+label
+buttons, clear counters, every action gives immediate feedback (press squash, ripple, toast). Never
+cluttered: one focal point (now playing), everything else secondary. Readability first.
+
+## Motion: anime.js v4 everywhere (`animejs`, MIT)
+`import { animate, createTimeline, stagger, spring, utils } from 'animejs'`. Central helpers in
+`web/src/lib/motion/` (e.g. `motion.ts`) with a `reduced` flag from `prefers-reduced-motion`
+(reduced → instant or opacity-only). Use for: page/section entrance staggers, button press squash
+& stretch, toasts, queue item enter/leave (keep `animate:flip` for reorder, or replace with anime FLIP),
+reactions float-up, title card, combo counter, lean-back enter/exit, avatar join/leave/poke/bounce,
+countdown pulse, berry rain. Svelte transitions may stay where simpler, but anime.js is the motion voice.
+
+## Smear motion via WASM (`crates/smear`, no wasm-bindgen → `web/static/smear.wasm`)
+Cartoon smear frames: fast-moving elements stretch along their velocity and squash across it, with a
+directional blur at peak speed, then snap back. Physics in WASM; JS applies transforms.
+ABI (all `extern "C"`, static buffers, MAX_BODIES = 256):
+```
+bodies_ptr()  -> *mut f32   // JS writes per body [x, y] current position (px) each frame
+smear_ptr()   -> *const f32 // per body [stretch (0..~1.5), angle (rad), blur (px), speed (px/s)]
+step(n_bodies: u32, dt: f32) // velocity from finite differences, critically-damped smoothing,
+                             // stretch = clamp(k * speed), decays smoothly when stopping
+reset(i: u32)               // forget history for body i (on spawn/teleport)
+rain_spawn(count: u32, width: f32, seed: u32)   // berry rain particles (cap 256)
+rain_step(dt: f32, width: f32, height: f32) -> u32   // gravity, air drag, wobble, floor bounce; returns live count
+rain_ptr() -> *const f32    // per particle [x, y, vx, vy, rot, size, life]
+```
+JS bridge `web/src/lib/motion/smear.ts`: `smear.track(el)` / `smear.untrack(el)`; one rAF loop
+reads each tracked element's animated position (from anime.js values, not layout reads where avoidable),
+calls `step`, writes `transform: … rotate(a) scale(1+s, 1/(1+s)) rotate(-a)` and `filter: blur()` only
+above a threshold. Plus `smearAnimate(el, animeParams)` = anime `animate` + auto track/untrack.
+Fallback if wasm fails: same API, plain JS math. Reduced motion → no smear.
+Apply smear to: reactions flying, title card slam-in, track art swap, queue items moving fast
+(drag release/reorder), toasts entering, poke wiggle, combo counter pops, lean-back transition,
+berry rain (canvas, per-particle stretch from velocity).
+Native tests: still body → stretch 0; constant fast velocity → stretch > 0 and aligned angle;
+stop → stretch decays to ~0 within ~150 ms; rain particles fall and stay within bounds.
+
+## The ten quirks (all approved)
+1. **Hold to skip**: press-and-hold ~600 ms; a ring fills (berry → blush near completion), release early
+   cancels; keyboard `N` also requires hold. Click = small "hold to skip" hint wiggle.
+2. **Title card**: on track change a big title (+ "added by") slams in centred with smear, holds ~1.2 s,
+   then flies into its spot in the now-playing card.
+3. **Reaction combos**: ≥ 3 of the same emoji within 2 s (from anyone) → "🔥 ×N COMBO" counter that grows,
+   shakes, colour heats toward blush; resets after 2 s idle. Client-only.
+4. **DJ of the day**: crown on that listener's avatar everywhere. Server field below.
+5. **Sync readout**: HUD chip "SYNC 3 ms" from the player's latest measured drift (abs, ms), green < 10,
+   amber < 30, red ≥ 30 or "—" when not playing; tooltip explains.
+6. **Poke**: click another listener's avatar → their avatar wiggles on everyone's screen; the target also
+   gets a toast "Toby poked you". Not self. Server rate limit 1 per 2 s per connection.
+7. **Away state**: `visibilitychange` → `presence` message; away avatars fade/desaturate; bounce on react.
+8. **Up-next countdown**: chip "Up next in 0:09 · <title>" visible in the last 10 s, pulsing each second.
+9. **Auto-pause when everyone leaves**: server pauses when the last listener disconnects (event message
+   "paused" with name "Cloudberry").
+10. **Konami code** (↑↑↓↓←→←→BA) → cloudberry rain (WASM `rain_*`, canvas, smeared), ~4 s, local only.
+
+## Protocol additions (phase 3)
+Client → server:
+```
+{ "type": "poke", "listener_id": <u64> }
+{ "type": "presence", "away": <bool> }
+```
+Server → client:
+```
+{ "type": "poke", "from_id": <u64>, "from_name": "<name>", "to_id": <u64> }   // broadcast
+```
+State additions: `listeners[].away: bool` (default false), `StationState.dj_of_day: string | null`
+= name whose added tracks received the most reactions today (server local day; `TZ` env in compose,
+default `America/New_York`), ties → most recent reaction wins. Persist `reactions(day TEXT, name TEXT,
+count INT, last_at INT, PRIMARY KEY(day, name))`; a reaction counts toward the *current track's*
+`added_by` (not the reactor). Poke with unknown/self target → `error`.
