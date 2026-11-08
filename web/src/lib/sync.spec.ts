@@ -8,6 +8,7 @@ import {
 	makeSample,
 	planStart,
 	serverToCtx,
+	shouldPrefetch,
 	type TimePair
 } from './sync';
 
@@ -111,5 +112,14 @@ describe('drift', () => {
 	it('shows up when the clock offset estimate improves', () => {
 		// Server is actually 30 ms further ahead than we thought -> we are 30 ms behind.
 		expect(driftMs(started, started.ctxWhen + 3.7, latency, t, offset + 30, pair)).toBeCloseTo(-30, 6);
+	});
+});
+
+describe('prefetch policy', () => {
+	it('decodes the next track ahead only up to 8 minutes (~23 MB of PCM per minute)', () => {
+		expect(shouldPrefetch({ duration_ms: 3 * 60_000 })).toBe(true);
+		expect(shouldPrefetch({ duration_ms: 8 * 60_000 })).toBe(true);
+		expect(shouldPrefetch({ duration_ms: 8 * 60_000 + 1 })).toBe(false);
+		expect(shouldPrefetch({ duration_ms: 20 * 60_000 })).toBe(false);
 	});
 });

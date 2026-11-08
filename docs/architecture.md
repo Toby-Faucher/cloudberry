@@ -42,11 +42,12 @@ JSON text frames tagged by `type`; max frame 64 KB. Full shapes in the
 
 | Direction | Messages |
 |---|---|
-| Client → server | `ping`, `add`, `enqueue`, `insert`, `remove`, `move`, `play`, `pause`, `skip`, `seek`, `chat`, `react`, `poke`, `presence` |
-| Server → client | `welcome`, `chat_history`, `pong`, `state`, `job`, `chat`, `react`, `poke`, `error` |
+| Client → server | `ping`, `add`, `enqueue`, `insert`, `remove`, `move`, `play`, `pause`, `skip`, `seek`, `chat`, `react`, `poke`, `presence`, `cancel_playlist` |
+| Server → client | `welcome`, `chat_history`, `library`, `pong`, `state`, `job`, `chat`, `react`, `poke`, `error` |
 
 `state` carries the whole `StationState` (current, queue, playing, position/anchor, listeners
-with `away`, library, history, jobs, `dj_of_day`) and is re-sent after every change. Per-connection
+with `away`, history, jobs, `dj_of_day`) and is re-sent after every change. The library travels
+separately in `library` (before the first `state`, then whenever it changes). Per-connection
 rate limits: chat 5 per 5 s, react 10 per 5 s, poke 1 per 2 s; excess is dropped.
 
 ## Sync algorithm

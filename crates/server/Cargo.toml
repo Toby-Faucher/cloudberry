@@ -20,4 +20,5 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 
 [dev-dependencies]
 tokio-tungstenite = "0.28"
+tokio = { version = "1", features = ["test-util"] } # time::pause for linger timers
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }

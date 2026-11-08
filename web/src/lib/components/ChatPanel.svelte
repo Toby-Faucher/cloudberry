@@ -5,6 +5,7 @@
 	import { ArrowDown, SendHorizontal, X } from '@lucide/svelte';
 	import { CHAT_MAX, type Station } from '#lib/station.svelte.ts';
 	import type { ChatMessage } from '#lib/types.ts';
+	import { collapsePresence } from '#lib/chat.ts';
 	import { ui } from '#lib/ui.svelte.ts';
 	import { dur } from '#lib/util.ts';
 	import Avatar from './Avatar.svelte';
@@ -12,6 +13,8 @@
 	let { station, onclose }: { station: Station; onclose: () => void } = $props();
 
 	const msgs = $derived(station.chat);
+	// Reconnect blips hidden, runs of joins/leaves folded into one quiet line.
+	const items = $derived(collapsePresence(msgs));
 	let list = $state<HTMLElement>();
 	let draft = $state('');
 	/** Unseen messages that arrived while scrolled up. */
@@ -77,15 +80,24 @@
 		{#if msgs.length === 0}
 			<p class="hello">Say hi. Everyone tuned in sees it.</p>
 		{/if}
-		{#each msgs as m, i (m.id)}
-			{#if m.kind === 'event'}
+		{#each items as item, i (item.key)}
+			{@const prev = items[i - 1]}
+			{#if item.kind === 'presence'}
+				<p class="event presence" in:fade={{ duration: dur(200) }}>
+					<span>{item.text}</span>
+					<time datetime={new Date(item.at).toISOString()}>{time(item.at)}</time>
+				</p>
+			{:else if item.m.kind === 'event'}
+				{@const m = item.m}
 				<p class="event" in:fade={{ duration: dur(200) }}>
 					<span>{m.name} {m.text}</span>
 					<time datetime={new Date(m.at).toISOString()}>{time(m.at)}</time>
 				</p>
-			{:else if continues(m, msgs[i - 1])}
+			{:else if continues(item.m, prev?.kind === 'msg' ? prev.m : undefined)}
+				{@const m = item.m}
 				<p class="msg cont" in:fly={{ y: 6, duration: dur(220), easing: cubicOut }}>{m.text}</p>
 			{:else}
+				{@const m = item.m}
 				<div class="msg first" in:fly={{ y: 6, duration: dur(220), easing: cubicOut }}>
 					<Avatar name={m.name} size={26} me={m.name === station.name} />
 					<div class="body">

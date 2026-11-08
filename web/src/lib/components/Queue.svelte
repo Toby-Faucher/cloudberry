@@ -41,15 +41,29 @@
 		setTimeout(() => rows.forEach((r) => smear.untrack(r)), flipMs + 120);
 	}
 
+	// The server silently drops moves past its 10 actions / 5 s limit, and then no state comes
+	// back to undo our local order. So shortly after the last move, snap back to server order.
+	let dragging = false;
+	let resync: ReturnType<typeof setTimeout> | undefined;
+	function sendMove(queue_id: number, to_index: number) {
+		station.send({ type: 'move', queue_id, to_index });
+		clearTimeout(resync);
+		resync = setTimeout(() => {
+			if (!dragging) items = (station.state?.queue ?? []).map((q) => ({ id: q.queue_id, q }));
+		}, 1500);
+	}
+
 	function consider(e: CustomEvent<DndEvent<Row>>) {
+		dragging = true;
 		items = e.detail.items;
 	}
 	function finalize(e: CustomEvent<DndEvent<Row>>) {
+		dragging = false;
 		items = e.detail.items;
 		const id = Number(e.detail.info.id);
 		const to = items.findIndex((r) => r.id === id);
 		const from = station.state?.queue.findIndex((q) => q.queue_id === id) ?? -1;
-		if (to >= 0 && from >= 0 && to !== from) station.send({ type: 'move', queue_id: id, to_index: to });
+		if (to >= 0 && from >= 0 && to !== from) sendMove(id, to);
 		smearReorder();
 	}
 
@@ -60,7 +74,7 @@
 		next.splice(to, 0, ...next.splice(from, 1));
 		smearReorder();
 		items = next;
-		station.send({ type: 'move', queue_id: row.id, to_index: to });
+		sendMove(row.id, to);
 	}
 </script>
 

@@ -41,7 +41,7 @@ export const ui = $state({
 	lines: null as LrcLine[] | null,
 	/** Highest chat message id the user has had on screen. */
 	seenId: 0,
-	/** DJ of the day (crown on their avatar everywhere), from station state. */
+	/** DJ of the day (crown on their header avatar), from station state. */
 	dj: null as string | null
 });
 

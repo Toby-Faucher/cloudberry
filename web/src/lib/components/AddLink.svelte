@@ -3,8 +3,10 @@
 	import { fly, fade } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { CircleAlert, Check, Plus } from '@lucide/svelte';
+	import { CircleAlert, Check, ListMusic, ListPlus, Plus, X } from '@lucide/svelte';
 	import { dur, isYouTubeUrl } from '#lib/util.ts';
+	import { groupJobs, jobVideo, playlistUrl } from '#lib/playlist.ts';
+	import type { Job } from '#lib/types.ts';
 
 	let { station }: { station: Station } = $props();
 	let url = $state('');
@@ -18,8 +20,16 @@
 			invalid = true;
 			return;
 		}
-		station.send({ type: 'add', url: v });
+		station.add(v);
 		url = '';
+	}
+
+	const rows = $derived(groupJobs(station.jobs));
+	/** The playlist our job's video was added from (`watch?v=…&list=…`), if any. */
+	const hintFor = (job: Job) => (job.added_by === station.name ? station.listHints[jobVideo(job) ?? ''] : undefined);
+	function addWhole(job: Job, list: string) {
+		delete station.listHints[jobVideo(job) ?? ''];
+		station.add(playlistUrl(list));
 	}
 
 	const label = (status: string) =>
@@ -36,7 +46,10 @@
 			autocomplete="off"
 			placeholder="Paste a YouTube link"
 			bind:value={url}
-			oninput={() => (invalid = false)}
+			oninput={() => {
+				invalid = false;
+				if (station.addNote?.error) station.addNote = null;
+			}}
 		/>
 		<button type="submit" disabled={!url.trim()}>
 			<Plus size={16} /> Add
@@ -44,17 +57,49 @@
 	</form>
 	{#if invalid}
 		<p class="hint" transition:fade={{ duration: dur(150) }}>That isn't a YouTube link. Try one from youtube.com or youtu.be.</p>
+	{:else if station.addNote}
+		<p class="hint" class:note={!station.addNote.error} role={station.addNote.error ? 'alert' : 'status'} transition:fade={{ duration: dur(150) }}>
+			{#if station.addNote.error}<CircleAlert size={14} />{:else}<span class="spinner"></span>{/if}
+			{station.addNote.text}
+		</p>
 	{/if}
 
-	{#if station.jobs.length}
+	{#if rows.length}
 		<ul class="jobs">
-			{#each station.jobs as job (job.id)}
+			{#each rows as row (row.key)}
 				<li
-					class="job {job.status}"
+					class="job {row.kind === 'job' ? row.job.status : row.queued || row.current ? 'downloading' : 'done'}"
 					animate:flip={{ duration: dur(300) }}
 					in:fly={{ y: -6, duration: dur(260), easing: cubicOut }}
 					out:fade={{ duration: dur(200) }}
 				>
+				{#if row.kind === 'playlist'}
+					{@const busy = row.queued > 0 || !!row.current}
+					<span class="state">{#if busy}<ListMusic size={14} />{:else}<Check size={14} strokeWidth={2.5} />{/if}</span>
+					<span class="what">
+						<span class="name">{row.title} · <span class="num">{row.done}/{row.total}</span></span>
+						<span class="sub">
+							{#if row.current}Downloading {row.current.title ?? 'next song'}{:else if busy}Waiting{:else}Done{/if}
+							{#if row.failed}· {row.failed} failed{/if}
+							· {row.added_by}
+						</span>
+					</span>
+					{#if row.queued}
+						<button
+							class="icon-btn cancel"
+							aria-label="Cancel the rest of {row.title}"
+							title="Cancel the rest ({row.queued} not started)"
+							onclick={() => station.send({ type: 'cancel_playlist', playlist_id: row.id })}
+						>
+							<X size={16} />
+						</button>
+					{/if}
+					{#if busy}
+						<span class="bar"><span style:transform="scaleX({row.progress})"></span></span>
+					{/if}
+				{:else}
+					{@const job = row.job}
+					{@const list = hintFor(job)}
 					<span class="state">
 						{#if job.status === 'done'}<Check size={14} strokeWidth={2.5} />{:else if job.status === 'failed'}<CircleAlert
 								size={14}
@@ -68,9 +113,15 @@
 							· {job.added_by}
 						</span>
 					</span>
+					{#if list}
+						<button class="whole" onclick={() => addWhole(job, list)}>
+							<ListPlus size={15} /> Add the whole playlist?
+						</button>
+					{/if}
 					{#if job.status === 'downloading' || job.status === 'queued'}
 						<span class="bar"><span style:transform="scaleX({job.progress})"></span></span>
 					{/if}
+				{/if}
 				</li>
 			{/each}
 		</ul>
@@ -106,7 +157,7 @@
 	input::placeholder {
 		color: var(--ink-3);
 	}
-	button {
+	.add button {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
@@ -123,18 +174,47 @@
 			opacity 160ms var(--ease-out),
 			background-color 160ms var(--ease-out);
 	}
-	button:hover:not(:disabled) {
+	.add button:hover:not(:disabled) {
 		background: var(--accent-hover);
 	}
-	button:disabled {
+	.add button:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
 		box-shadow: none;
 	}
 	.hint {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 		margin: 8px 6px 0;
 		font-size: 0.85rem;
 		color: var(--danger);
+	}
+	.hint.note {
+		color: var(--ink-2);
+	}
+	.whole {
+		flex: none;
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		min-height: 36px;
+		padding: 0 12px;
+		border-radius: 10px;
+		background: var(--accent-soft);
+		color: var(--accent-ink);
+		font-weight: 600;
+		font-size: 0.82rem;
+		white-space: nowrap;
+	}
+	.whole:hover {
+		background: var(--accent);
+		color: var(--on-accent);
+	}
+	.cancel {
+		flex: none;
+		margin-left: auto;
 	}
 
 	.jobs {

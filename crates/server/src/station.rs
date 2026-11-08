@@ -17,7 +17,13 @@ const CHAT_KEEP: i64 = 500;
 const CHAT_HISTORY: i64 = 100;
 pub const MAX_QUEUE: usize = 200;
 pub const QUEUE_FULL: &str = "Queue is full";
-const MAX_PENDING_JOBS: usize = 10;
+pub const TOO_MANY_JOBS: &str = "Too many downloads queued, try again soon";
+/// Pending (queued + downloading) jobs in total, so a 50-song playlist fits...
+const MAX_PENDING_JOBS: usize = 60;
+/// ...while single-video adds stop at 10 pending single jobs.
+const MAX_PENDING_SINGLES: usize = 10;
+/// How long a finished playlist's job rows stay visible.
+const PLAYLIST_LINGER: Duration = Duration::from_secs(8);
 
 pub fn now_ms() -> f64 {
     SystemTime::now()
@@ -71,6 +77,24 @@ pub struct Job {
     pub title: Option<String>,
     pub error: Option<String>,
     pub added_by: String,
+    /// Set for jobs created by a playlist import, so clients can group them.
+    pub playlist: Option<PlaylistRef>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct PlaylistRef {
+    pub id: String,
+    pub title: String,
+}
+
+impl Job {
+    fn pending(&self) -> bool {
+        matches!(self.status, JobStatus::Queued | JobStatus::Downloading)
+    }
+
+    fn in_playlist(&self, id: &str) -> bool {
+        self.playlist.as_ref().is_some_and(|p| p.id == id)
+    }
 }
 
 /// Serialized as `StationState`.
@@ -82,6 +106,8 @@ pub struct Station {
     pub position_ms: f64,
     pub anchor_server_ms: f64,
     pub listeners: Vec<Listener>,
+    /// Newest first. Sent as its own `library` message (it's the big part), not in `state`.
+    #[serde(skip)]
     pub library: Vec<Track>,
     pub jobs: Vec<Job>,
     /// Last played tracks (left `current` by ending, skip or remove), newest first.
@@ -240,6 +266,8 @@ pub struct Shared {
     pub tx: broadcast::Sender<Utf8Bytes>,
     pub dl_tx: mpsc::UnboundedSender<DlRequest>,
     pub cfg: Config,
+    /// One playlist expansion (a yt-dlp process) at a time.
+    pub expanding: tokio::sync::Semaphore,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -256,6 +284,12 @@ pub fn state_msg(st: &Station) -> Utf8Bytes {
     json!({ "type": "state", "state": st }).to_string().into()
 }
 
+pub fn library_msg(st: &Station) -> Utf8Bytes {
+    json!({ "type": "library", "tracks": st.library })
+        .to_string()
+        .into()
+}
+
 impl Shared {
     pub fn new(cfg: Config) -> rusqlite::Result<(Arc<Self>, mpsc::UnboundedReceiver<DlRequest>)> {
         let db = Connection::open(&cfg.db_path)?;
@@ -268,6 +302,7 @@ impl Shared {
             tx,
             dl_tx,
             cfg,
+            expanding: tokio::sync::Semaphore::new(1),
         });
         Ok((shared, dl_rx))
     }
@@ -418,19 +453,125 @@ impl Shared {
     /// Add a queued job (clients see it via the state broadcast), unless too many are pending.
     pub fn add_job(&self, mut job: Job) -> Result<u64, String> {
         let mut st = self.lock();
-        let pending = st
-            .jobs
-            .iter()
-            .filter(|j| matches!(j.status, JobStatus::Queued | JobStatus::Downloading))
-            .count();
-        if pending >= MAX_PENDING_JOBS {
-            return Err("Too many downloads queued, try again soon".into());
+        let pending = st.jobs.iter().filter(|j| j.pending());
+        let singles = pending.clone().filter(|j| j.playlist.is_none()).count();
+        if pending.count() >= MAX_PENDING_JOBS || singles >= MAX_PENDING_SINGLES {
+            return Err(TOO_MANY_JOBS.into());
         }
         job.id = st.next_id();
         let id = job.id;
         st.jobs.push(job);
         self.broadcast_state(&st);
         Ok(id)
+    }
+
+    /// Enqueue a playlist's cached tracks now and create download jobs for the rest, as far as
+    /// pending-job capacity allows. Returns (songs added, skipped incl. `pl.skipped`, downloads).
+    pub fn import_playlist(
+        self: &Arc<Self>,
+        list_id: &str,
+        pl: &crate::ytdl::Playlist,
+        added_by: &str,
+    ) -> Result<(usize, usize, Vec<DlRequest>), String> {
+        let mut missing = Vec::new();
+        let (mut cached, mut full) = (0, false);
+        self.change(|st, now| {
+            for (id, title) in &pl.entries {
+                match st.track(id).cloned() {
+                    Some(t) => {
+                        if st.push(t, added_by, now) {
+                            cached += 1;
+                        } else {
+                            full = true;
+                        }
+                    }
+                    None => missing.push((id, title)),
+                }
+            }
+            cached > 0
+        });
+        let mut st = self.lock();
+        let pending = st.jobs.iter().filter(|j| j.pending()).count();
+        let room = MAX_PENDING_JOBS.saturating_sub(pending);
+        let mut requests = Vec::new();
+        for (id, title) in missing.iter().take(room) {
+            let job_id = st.next_id();
+            st.jobs.push(Job {
+                id: job_id,
+                url: crate::ytdl::canonical_url(id),
+                status: JobStatus::Queued,
+                progress: 0.0,
+                title: title.as_ref().map(|t| t.to_string()),
+                error: None,
+                added_by: added_by.to_string(),
+                playlist: Some(PlaylistRef {
+                    id: list_id.to_string(),
+                    title: pl.title.clone(),
+                }),
+            });
+            requests.push(DlRequest {
+                job_id,
+                video_id: id.to_string(),
+            });
+        }
+        if !requests.is_empty() {
+            self.broadcast_state(&st);
+        }
+        let songs = cached + requests.len();
+        let skipped = pl.entries.len() - songs + pl.skipped;
+        if songs == 0 {
+            return Err(if full {
+                QUEUE_FULL.into()
+            } else if missing.len() > room {
+                TOO_MANY_JOBS.into()
+            } else {
+                "Nothing in that playlist can be added".into()
+            });
+        }
+        Ok((songs, skipped, requests))
+    }
+
+    /// Drop a playlist's not-yet-started jobs (a running download finishes). Returns its title.
+    pub fn cancel_playlist(self: &Arc<Self>, list_id: &str) -> Option<String> {
+        let mut st = self.lock();
+        let title = st
+            .jobs
+            .iter()
+            .find(|j| j.status == JobStatus::Queued && j.in_playlist(list_id))
+            .and_then(|j| j.playlist.as_ref())
+            .map(|p| p.title.clone())?;
+        st.jobs
+            .retain(|j| !(j.status == JobStatus::Queued && j.in_playlist(list_id)));
+        self.broadcast_state(&st);
+        drop(st);
+        self.reap_playlist(list_id);
+        Some(title)
+    }
+
+    /// Once nothing of a playlist is pending, clear all its rows after a short linger.
+    fn reap_playlist(self: &Arc<Self>, list_id: &str) {
+        let st = self.lock();
+        let jobs = st.jobs.iter().filter(|j| j.in_playlist(list_id));
+        if jobs.clone().any(Job::pending) {
+            return;
+        }
+        let ids = jobs.map(|j| j.id).collect();
+        drop(st);
+        self.remove_jobs_after(ids, PLAYLIST_LINGER);
+    }
+
+    /// Schedule a finished job's removal: singles on their own, playlist jobs as a group.
+    fn retire_job(self: &Arc<Self>, id: u64, delay: Duration) {
+        let playlist = self
+            .lock()
+            .jobs
+            .iter()
+            .find(|j| j.id == id)
+            .and_then(|j| j.playlist.clone());
+        match playlist {
+            Some(p) => self.reap_playlist(&p.id),
+            None => self.remove_jobs_after(vec![id], delay),
+        }
     }
 
     /// Update a job in place and send a `job` message (no full state broadcast).
@@ -443,12 +584,12 @@ impl Shared {
     }
 
     pub fn finish_job(self: &Arc<Self>, id: u64, mut track: Track) {
-        let added_by = {
+        let (added_by, in_playlist) = {
             let st = self.lock();
             st.jobs
                 .iter()
                 .find(|j| j.id == id)
-                .map(|j| j.added_by.clone())
+                .map(|j| (j.added_by.clone(), j.playlist.is_some()))
                 .unwrap_or_default()
         };
         self.update_job(id, |j| {
@@ -456,24 +597,31 @@ impl Shared {
             j.progress = 1.0;
             j.title = Some(track.title.clone());
         });
-        let mut queued = false;
+        let (mut queued, mut new) = (false, false);
         self.change(|st, now| {
             if st.track(&track.id).is_none() {
                 track.added_by.clone_from(&added_by);
                 self.insert_track(&track);
                 st.library.insert(0, track.clone());
+                new = true;
             }
             queued = st.push(track.clone(), &added_by, now);
             true
         });
-        let what = if queued {
-            ""
-        } else {
-            " to the library (queue is full)"
-        };
-        self.event(&added_by, &format!("added {}{what}", track.title));
+        if new {
+            self.send(library_msg(&self.lock()));
+        }
+        // A playlist import posts one summary event instead of one per song.
+        if !in_playlist {
+            let what = if queued {
+                ""
+            } else {
+                " to the library (queue is full)"
+            };
+            self.event(&added_by, &format!("added {}{what}", track.title));
+        }
         // Long enough for the client's checkmark to show.
-        self.remove_job_after(id, Duration::from_secs(3));
+        self.retire_job(id, Duration::from_secs(3));
     }
 
     pub fn fail_job(self: &Arc<Self>, id: u64, error: String) {
@@ -482,15 +630,15 @@ impl Shared {
             j.error = Some(error);
         });
         self.broadcast_state(&self.lock());
-        self.remove_job_after(id, Duration::from_secs(300));
+        self.retire_job(id, Duration::from_secs(300));
     }
 
-    fn remove_job_after(self: &Arc<Self>, id: u64, delay: Duration) {
+    fn remove_jobs_after(self: &Arc<Self>, ids: Vec<u64>, delay: Duration) {
         let me = Arc::clone(self);
         tokio::spawn(async move {
             tokio::time::sleep(delay).await;
             let mut st = me.lock();
-            st.jobs.retain(|j| j.id != id);
+            st.jobs.retain(|j| !ids.contains(&j.id));
             me.broadcast_state(&st);
         });
     }
@@ -626,6 +774,7 @@ impl Shared {
         let mut st = self.lock();
         st.set_gain(id, gain_db);
         self.broadcast_state(&st);
+        self.send(library_msg(&st));
     }
 
     /// Save queue + current item + live position (tiny, so rewrite everything).
@@ -1037,7 +1186,151 @@ mod tests {
             title: None,
             error: None,
             added_by: "toby".into(),
+            playlist: None,
         }
+    }
+
+    fn playlist(ids: &[&str]) -> crate::ytdl::Playlist {
+        crate::ytdl::Playlist {
+            title: "Mix".into(),
+            entries: ids.iter().map(|id| (id.to_string(), None)).collect(),
+            skipped: 1,
+            truncated: false,
+        }
+    }
+
+    fn pending_in(shared: &Shared, list: &str) -> usize {
+        let st = shared.lock();
+        st.jobs
+            .iter()
+            .filter(|j| j.pending() && j.in_playlist(list))
+            .count()
+    }
+
+    #[test]
+    fn playlist_import_enqueues_cached_and_queues_the_rest() {
+        let (cfg, dir) = temp_cfg("plimport");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            shared.lock().library.push(track("b", 60_000));
+            let (songs, skipped, reqs) = shared
+                .import_playlist("PL1", &playlist(&["a", "b", "c"]), "toby")
+                .unwrap();
+            assert_eq!((songs, skipped), (3, 1)); // pl.skipped carries through
+            let got: Vec<&str> = reqs.iter().map(|r| r.video_id.as_str()).collect();
+            assert_eq!(got, ["a", "c"], "cached b gets no job");
+            let st = shared.lock();
+            assert_eq!(st.current.as_ref().unwrap().track.id, "b"); // idle station starts it
+            assert_eq!(st.jobs.len(), 2);
+            let p = st.jobs[0].playlist.as_ref().unwrap();
+            assert_eq!((p.id.as_str(), p.title.as_str()), ("PL1", "Mix"));
+            assert_eq!(st.jobs[1].url, "https://www.youtube.com/watch?v=c");
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn playlist_import_is_truncated_to_capacity() {
+        let (cfg, dir) = temp_cfg("plcap");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            for _ in 0..MAX_PENDING_SINGLES {
+                shared.add_job(job()).unwrap();
+            }
+            let ids: Vec<String> = (0..48).map(|i| format!("v{i}")).collect();
+            let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+            let (songs, skipped, _) = shared
+                .import_playlist("PL1", &playlist(&ids), "toby")
+                .unwrap();
+            assert_eq!((songs, skipped), (48, 1));
+            let (songs, skipped, _) = shared
+                .import_playlist("PL2", &playlist(&["x", "y", "z"]), "toby")
+                .unwrap();
+            assert_eq!((songs, skipped), (2, 2), "only 2 of 60 slots were left");
+            let err = shared
+                .import_playlist("PL3", &playlist(&["q"]), "toby")
+                .unwrap_err();
+            assert_eq!(err, TOO_MANY_JOBS);
+            assert_eq!(shared.add_job(job()).unwrap_err(), TOO_MANY_JOBS);
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn playlist_jobs_do_not_count_against_single_cap() {
+        let (cfg, dir) = temp_cfg("plsingle");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            let ids: Vec<String> = (0..40).map(|i| format!("v{i}")).collect();
+            let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+            shared
+                .import_playlist("PL1", &playlist(&ids), "toby")
+                .unwrap();
+            for _ in 0..MAX_PENDING_SINGLES {
+                shared.add_job(job()).unwrap();
+            }
+            assert_eq!(shared.add_job(job()).unwrap_err(), TOO_MANY_JOBS);
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn playlist_import_into_full_queue() {
+        let (cfg, dir) = temp_cfg("plfull");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            shared.lock().library.push(track("a", 60_000));
+            for _ in 0..=MAX_QUEUE {
+                shared.enqueue("a", "toby", usize::MAX).unwrap();
+            }
+            let err = shared
+                .import_playlist("PL1", &playlist(&["a"]), "toby")
+                .unwrap_err();
+            assert_eq!(err, QUEUE_FULL);
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cancel_playlist_drops_only_its_queued_jobs() {
+        let (cfg, dir) = temp_cfg("plcancel");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            let (_, _, a) = shared
+                .import_playlist("PL1", &playlist(&["a", "b", "c"]), "toby")
+                .unwrap();
+            shared
+                .import_playlist("PL2", &playlist(&["d"]), "toby")
+                .unwrap();
+            let single = shared.add_job(job()).unwrap();
+            shared.update_job(a[0].job_id, |j| j.status = JobStatus::Downloading);
+            assert_eq!(shared.cancel_playlist("PL1").as_deref(), Some("Mix"));
+            assert_eq!(pending_in(&shared, "PL1"), 1, "the running download stays");
+            assert_eq!(pending_in(&shared, "PL2"), 1);
+            assert!(shared.lock().jobs.iter().any(|j| j.id == single));
+            assert_eq!(shared.cancel_playlist("PL1"), None, "nothing queued left");
+            assert_eq!(shared.cancel_playlist("nope"), None);
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn finished_playlist_rows_leave_together() {
+        let (cfg, dir) = temp_cfg("plreap");
+        rt().block_on(async {
+            tokio::time::pause();
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            let (_, _, r) = shared
+                .import_playlist("PL1", &playlist(&["a", "b"]), "toby")
+                .unwrap();
+            shared.finish_job(r[0].job_id, track("a", 60_000));
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            assert_eq!(shared.lock().jobs.len(), 2, "done row waits for the rest");
+            shared.fail_job(r[1].job_id, "x".into());
+            tokio::time::sleep(PLAYLIST_LINGER + Duration::from_secs(1)).await;
+            assert!(shared.lock().jobs.is_empty());
+        });
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -1068,7 +1361,7 @@ mod tests {
         let (cfg, dir) = temp_cfg("jobcap");
         rt().block_on(async {
             let (shared, _rx) = Shared::new(cfg).unwrap();
-            let ids: Vec<u64> = (0..MAX_PENDING_JOBS)
+            let ids: Vec<u64> = (0..MAX_PENDING_SINGLES)
                 .map(|_| shared.add_job(job()).unwrap())
                 .collect();
             let err = shared.add_job(job()).unwrap_err();

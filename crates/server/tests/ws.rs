@@ -31,6 +31,7 @@ async fn start_with(
         ytdlp: "/nonexistent/yt-dlp".into(),
         idle_timeout: std::time::Duration::from_secs(120),
         download_timeout: std::time::Duration::from_secs(900),
+        playlist_timeout: std::time::Duration::from_secs(60),
     };
     tweak(&mut cfg);
     let (router, _) = app(cfg).unwrap();
@@ -74,6 +75,10 @@ async fn websocket_flow() {
     let history = next_json(&mut ws).await;
     assert_eq!(history, json!({ "type": "chat_history", "messages": [] }));
 
+    // The library comes on its own, before the first state.
+    let library = next_json(&mut ws).await;
+    assert_eq!(library, json!({ "type": "library", "tracks": [] }));
+
     let state = next_json(&mut ws).await;
     assert_eq!(state["type"], "state");
     let st = &state["state"];
@@ -88,12 +93,12 @@ async fn websocket_flow() {
         "playing",
         "position_ms",
         "anchor_server_ms",
-        "library",
         "jobs",
         "history",
     ] {
         assert!(st.get(k).is_some(), "missing {k}");
     }
+    assert!(st.get("library").is_none(), "library moved out of state");
     let joined = next_json(&mut ws).await;
     assert!(is_chat(&joined, "event", "Toby", "joined"), "{joined}");
 
@@ -170,7 +175,10 @@ async fn http_endpoints() {
 
     let r = http(&addr, "GET /api/state HTTP/1.1").await;
     assert!(r.starts_with("HTTP/1.1 200"), "{r}");
-    assert!(r.contains("\"library\":[]"));
+    assert!(!r.contains("\"library\""), "{r}");
+    let r = http(&addr, "GET /api/library HTTP/1.1").await;
+    assert!(r.starts_with("HTTP/1.1 200"), "{r}");
+    assert!(r.ends_with("\r\n\r\n[]"), "{r}");
 
     std::fs::write(dir.join("music/abcdefghijk.mp3"), vec![7u8; 1000]).unwrap();
     let r = http(
@@ -239,6 +247,7 @@ async fn spa_fallback() {
         ytdlp: "yt-dlp".into(),
         idle_timeout: std::time::Duration::from_secs(120),
         download_timeout: std::time::Duration::from_secs(900),
+        playlist_timeout: std::time::Duration::from_secs(60),
     };
     let (router, _) = app(cfg).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -296,6 +305,7 @@ async fn chat_reactions_and_history_on_connect() {
     let mut a = connect(&addr, "Toby").await;
     let me = next_json(&mut a).await["you"].as_u64().unwrap();
     assert_eq!(next_json(&mut a).await["type"], "chat_history");
+    assert_eq!(next_json(&mut a).await["type"], "library");
     assert_eq!(next_json(&mut a).await["type"], "state");
     let joined = next_json(&mut a).await;
     assert!(is_chat(&joined, "event", "Toby", "joined"), "{joined}");
@@ -327,7 +337,7 @@ async fn chat_reactions_and_history_on_connect() {
         assert_eq!(next_json(&mut a).await["type"], "error", "{bad}");
     }
 
-    // A newcomer gets history (oldest first, without its own join), then state, then its join.
+    // A newcomer gets history (oldest first, without its own join), library, state, then its join.
     let mut b = connect(&addr, "Ann").await;
     assert_eq!(next_json(&mut b).await["type"], "welcome");
     let h = next_json(&mut b).await;
@@ -337,6 +347,7 @@ async fn chat_reactions_and_history_on_connect() {
     assert_eq!(msgs[0]["text"], "joined");
     assert_eq!(msgs[1]["id"], hello_id);
     assert_eq!(msgs[1]["kind"], "user");
+    assert_eq!(next_json(&mut b).await["type"], "library");
     assert_eq!(next_json(&mut b).await["type"], "state");
     assert!(is_chat(&next_json(&mut b).await, "event", "Ann", "joined"));
     wait_for(&mut a, |m| is_chat(m, "event", "Ann", "joined")).await;
@@ -416,15 +427,17 @@ async fn mvp_db_migrates_and_actions_emit_events() {
         .is_ok_and(|s| s.success());
     let (addr, dir) = start_in(dir).await;
     let mut ws = connect(&addr, "Toby").await;
-    let st = wait_for(&mut ws, |m| m["type"] == "state").await;
-    assert_eq!(st["state"]["library"].as_array().unwrap().len(), 3);
-    assert_eq!(st["state"]["library"][0]["gain_db"], 0.0);
+    let lib = wait_for(&mut ws, |m| m["type"] == "library").await;
+    assert_eq!(lib["tracks"].as_array().unwrap().len(), 3);
+    assert_eq!(lib["tracks"][0]["id"], C, "newest first");
+    assert_eq!(lib["tracks"][0]["gain_db"], 0.0);
     if have_ffmpeg {
+        // Measuring loudness changes the library, so it is re-sent.
         let m = wait_for(&mut ws, |m| {
-            m["type"] == "state" && m["state"]["library"][2]["gain_db"] != 0.0
+            m["type"] == "library" && m["tracks"][2]["gain_db"] != 0.0
         })
         .await;
-        let g = m["state"]["library"][2]["gain_db"].as_f64().unwrap();
+        let g = m["tracks"][2]["gain_db"].as_f64().unwrap();
         assert!((g - 8.2).abs() < 1.0, "gain {g}");
     } else {
         eprintln!("ffmpeg not found; skipping loudness backfill check");
@@ -803,5 +816,111 @@ async fn download_timeout_kills_process_tree() {
         .map(|e| e.file_name())
         .collect();
     assert!(left.is_empty(), "partials left: {left:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Playlist import end to end with a fake yt-dlp: `--flat-playlist` prints the captured fixture
+/// (or fails / hangs for special list ids); downloads just hang so jobs stay pending.
+#[tokio::test]
+async fn playlist_import_cancel_and_errors() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = fresh_dir("playlist");
+    std::fs::create_dir_all(&dir).unwrap();
+    let fixture = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/flat_playlist.json"
+    );
+    let script = dir.join("fake-yt-dlp");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --flat-playlist ] || exec sleep 30\n\
+             case \"$7\" in\n\
+             *list=PLBAD) echo 'ERROR: [youtube:tab] PLBAD: The playlist does not exist.' >&2; exit 1;;\n\
+             *list=PLSLOW) exec sleep 30;;\n\
+             esac\ncat {fixture}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // The first fixture entry is already in the library: it is queued without a job.
+    {
+        let db = rusqlite::Connection::open(dir.join("db.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TABLE tracks(id TEXT PRIMARY KEY, title TEXT NOT NULL,
+                 duration_ms INTEGER NOT NULL, thumbnail INTEGER NOT NULL,
+                 added_by TEXT NOT NULL, added_at INTEGER NOT NULL, gain_db REAL);
+             INSERT INTO tracks VALUES ('NOaZVn2ML44', 'Good intro Music', 16000, 0, 'ann', 1, 0);",
+        )
+        .unwrap();
+    }
+    let (addr, dir) = start_with(dir, |c| {
+        c.ytdlp = script.display().to_string();
+        c.playlist_timeout = std::time::Duration::from_secs(1);
+    })
+    .await;
+    let (mut ws, _) = join(&addr, "Toby").await;
+    let list = "PLKM3pENfZPOLCUSim2fut61AWCp9AUrQU";
+    let url = format!("https://music.youtube.com/playlist?list={list}");
+    send(&mut ws, json!({ "type": "add", "url": url })).await;
+    let st = wait_for(&mut ws, |m| {
+        m["type"] == "state" && m["state"]["jobs"].as_array().unwrap().len() == 4
+    })
+    .await;
+    let st = &st["state"];
+    assert_eq!(st["current"]["track"]["id"], "NOaZVn2ML44");
+    assert_eq!(
+        st["jobs"][0]["playlist"],
+        json!({ "id": list, "title": "10 sec Intro Music" })
+    );
+    assert_eq!(st["jobs"][0]["title"], "Nice intro music"); // prefilled from the flat entry
+    wait_for(&mut ws, |m| {
+        is_chat(
+            m,
+            "event",
+            "Toby",
+            "added playlist 10 sec Intro Music (5 songs, 0 skipped) (first 5)",
+        )
+    })
+    .await;
+
+    // Cancel drops the queued jobs; the one downloading carries on.
+    send(
+        &mut ws,
+        json!({ "type": "cancel_playlist", "playlist_id": list }),
+    )
+    .await;
+    let st = wait_for(&mut ws, |m| {
+        m["type"] == "state" && m["state"]["jobs"].as_array().unwrap().len() == 1
+    })
+    .await;
+    assert_eq!(st["state"]["jobs"][0]["status"], "downloading");
+    wait_for(&mut ws, |m| {
+        is_chat(m, "event", "Toby", "cancelled playlist 10 sec Intro Music")
+    })
+    .await;
+    send(
+        &mut ws,
+        json!({ "type": "cancel_playlist", "playlist_id": list }),
+    )
+    .await;
+    assert_eq!(
+        wait_for(&mut ws, |m| m["type"] == "error").await["message"],
+        "Nothing left to cancel"
+    );
+
+    // Expansion failures come back to the sender as errors.
+    let bad = "https://www.youtube.com/playlist?list=PLBAD";
+    send(&mut ws, json!({ "type": "add", "url": bad })).await;
+    assert_eq!(
+        wait_for(&mut ws, |m| m["type"] == "error").await["message"],
+        "Couldn't load that playlist: [youtube:tab] PLBAD: The playlist does not exist."
+    );
+    let slow = "https://www.youtube.com/playlist?list=PLSLOW";
+    send(&mut ws, json!({ "type": "add", "url": slow })).await;
+    assert_eq!(
+        wait_for(&mut ws, |m| m["type"] == "error").await["message"],
+        "Loading the playlist timed out"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }

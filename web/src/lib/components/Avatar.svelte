@@ -3,9 +3,10 @@
 	import { hue, initials } from '#lib/util.ts';
 	import { ui } from '#lib/ui.svelte.ts';
 
-	/** Decorative by default: the name is almost always printed next to it. DJ of the day wears the crown. */
-	let { name, size = 32, me = false }: { name: string; size?: number; me?: boolean } = $props();
-	const dj = $derived(ui.dj !== null && ui.dj === name);
+	/** Decorative by default: the name is almost always printed next to it. `crown`: show the DJ-of-the-day
+	 * crown if this is them (only the header listener stack asks, so rows stay calm). */
+	let { name, size = 32, me = false, crown = false }: { name: string; size?: number; me?: boolean; crown?: boolean } = $props();
+	const dj = $derived(crown && ui.dj !== null && ui.dj === name);
 </script>
 
 <span class="avatar" class:me class:small={size < 24} style:--h={hue(name)} style:--s="{size}px" aria-hidden="true"
