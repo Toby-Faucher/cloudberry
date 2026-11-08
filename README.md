@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" alt="Cloudberry logo" width="96" height="96">
-
-# Cloudberry
+<h1><img src="docs/assets/logo-lockup.png" alt="Cloudberry" width="520"></h1>
 
 **A tiny self-hosted shared radio. Everyone who tunes in hears the same track at the same moment.**
 
