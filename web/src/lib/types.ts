@@ -7,6 +7,8 @@ export interface Track {
 	thumbnail: boolean;
 	added_by: string;
 	added_at: number;
+	/** Loudness normalisation, dB (clamped -12..12; 0 until measured). */
+	gain_db: number;
 }
 
 export interface QueueItem {
@@ -41,6 +43,20 @@ export interface StationState {
 	listeners: Listener[];
 	library: Track[];
 	jobs: Job[];
+	/** Last 20 played, newest first. */
+	history: Track[];
+}
+
+export const REACTIONS = ['🔥', '😂', '❤️', '👏', '🎉', '😴'] as const;
+export type Emoji = (typeof REACTIONS)[number];
+
+export interface ChatMessage {
+	id: number;
+	kind: 'user' | 'event';
+	name: string;
+	text: string;
+	/** ms since epoch */
+	at: number;
 }
 
 export type ClientMsg =
@@ -52,11 +68,17 @@ export type ClientMsg =
 	| { type: 'play' }
 	| { type: 'pause' }
 	| { type: 'skip' }
-	| { type: 'seek'; position_ms: number };
+	| { type: 'seek'; position_ms: number }
+	| { type: 'chat'; text: string }
+	| { type: 'react'; emoji: Emoji }
+	| { type: 'insert'; track_id: string; index: number };
 
 export type ServerMsg =
 	| { type: 'welcome'; you: number }
 	| { type: 'pong'; t0: number; server_time: number }
 	| { type: 'state'; state: StationState }
 	| { type: 'job'; job: Job }
-	| { type: 'error'; message: string };
+	| { type: 'error'; message: string }
+	| { type: 'chat_history'; messages: ChatMessage[] }
+	| { type: 'chat'; message: ChatMessage }
+	| { type: 'react'; listener_id: number; name: string; emoji: Emoji };

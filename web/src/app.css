@@ -1,3 +1,14 @@
+/* Self-hosted fonts (no Google Fonts requests). */
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/bricolage-grotesque/opsz.css';
+
+/* Registered so track changes cross-fade the tint instead of snapping. */
+@property --track-tint {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #f97316;
+}
+
 :root {
 	--bg: #fbf6f1;
 	--surface: #ffffff;
@@ -13,8 +24,8 @@
 	--danger: #d1432c;
 	--shadow: 0 1px 2px rgb(60 30 10 / 0.04), 0 8px 28px -12px rgb(60 30 10 / 0.14);
 
-	--font-display: 'Bricolage Grotesque', 'Inter', system-ui, sans-serif;
-	--font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-display: 'Bricolage Grotesque Variable', 'Inter Variable', system-ui, sans-serif;
+	--font-body: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
 	--r-sm: 10px;
 	--r-md: 16px;
@@ -24,8 +35,11 @@
 
 	/* Written every frame by the visualizer; drives the ambient glow. */
 	--energy: 0;
+	/* Per-track tint from the artwork (Integrations.svelte sets it inline on :root). */
+	--track-tint: var(--accent);
 
 	color-scheme: light;
+	transition: --track-tint 1.2s ease;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -47,14 +47,20 @@ export function makeSample(t0: number, t1: number, serverTime: number): ClockSam
 }
 
 /**
- * The lowest-RTT sample has the smallest possible asymmetry error (|err| <= rtt/2),
- * so it is the best offset estimate we have. Returns null with no samples.
+ * Low-RTT samples have the smallest possible asymmetry error (|err| <= rtt/2), so
+ * keep the 3 lowest-RTT samples and take their median: one fast-but-skewed sample
+ * can't drag the estimate around. Returns null with no samples.
  */
 export function bestOffset(samples: readonly ClockSample[]): number | null {
-	let best: ClockSample | null = null;
-	for (const s of samples) if (!best || s.rtt < best.rtt) best = s;
-	return best ? best.offset : null;
+	const best = [...samples].sort((a, b) => a.rtt - b.rtt).slice(0, 3).map((s) => s.offset);
+	if (!best.length) return null;
+	best.sort((a, b) => a - b);
+	const m = best.length >> 1;
+	return best.length % 2 ? best[m] : (best[m - 1] + best[m]) / 2;
 }
+
+/** Track loudness correction (dB) -> linear gain. Missing/0 -> unity. */
+export const dbToGain = (db: number) => 10 ** ((db || 0) / 20);
 
 type Timeline = Pick<StationState, 'playing' | 'position_ms' | 'anchor_server_ms'>;
 
@@ -165,7 +171,9 @@ export class Clock {
 const DRIFT_CHECK_MS = 2000;
 
 /**
- * Owns the AudioContext graph: source -> analyser -> gain -> destination.
+ * Owns the AudioContext graph: source -> trackGain -> analyser -> gain -> destination.
+ * trackGain applies the server-measured loudness correction (Track.gain_db), before
+ * the analyser so the visualizer sees normalised levels too.
  * Call `update(state)` on every `state` message; it figures out whether
  * anything relevant to audio changed and (re)schedules.
  */
@@ -173,6 +181,7 @@ export class Player {
 	readonly ctx: AudioContext;
 	readonly analyser: AnalyserNode;
 	private gain: GainNode;
+	private trackGain: GainNode;
 	private buffers = new Map<string, Promise<AudioBuffer>>();
 	private source: AudioBufferSourceNode | null = null;
 	private started: Started | null = null;
@@ -193,6 +202,8 @@ export class Player {
 		this.ctx = new AudioContext({ latencyHint: 'playback' });
 		this.analyser = new AnalyserNode(this.ctx, { fftSize: 2048, smoothingTimeConstant: 0 });
 		this.gain = new GainNode(this.ctx);
+		this.trackGain = new GainNode(this.ctx);
+		this.trackGain.connect(this.analyser);
 		this.analyser.connect(this.gain).connect(this.ctx.destination);
 		void this.ctx.resume();
 		this.timer = setInterval(() => this.checkDrift(), DRIFT_CHECK_MS);
@@ -213,6 +224,8 @@ export class Player {
 		const keep = new Set([cur?.track.id, next?.track.id]);
 		for (const id of this.buffers.keys()) if (!keep.has(id)) this.buffers.delete(id);
 		if (next) this.load(next.track.id).catch(() => {}); // prefetch; errors resurface on play
+		// gain_db can change later (measured lazily server-side), so apply on every state.
+		if (cur) this.trackGain.gain.setTargetAtTime(dbToGain(cur.track.gain_db), this.ctx.currentTime, 0.05);
 
 		const key = cur
 			? `${cur.queue_id}|${state.playing}|${state.position_ms}|${state.anchor_server_ms}`
@@ -306,7 +319,7 @@ export class Player {
 			serverToCtx(plan.startServerMs, this.clock.offset, pair) - pair.latency
 		);
 		const src = new AudioBufferSourceNode(this.ctx, { buffer });
-		src.connect(this.analyser);
+		src.connect(this.trackGain);
 		src.start(ctxWhen, plan.offsetMs / 1000);
 		this.source = src;
 		this.started = { ctxWhen, offsetSec: plan.offsetMs / 1000 };

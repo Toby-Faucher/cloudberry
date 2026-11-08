@@ -6,10 +6,21 @@
 	import type { Track } from '#lib/types.ts';
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
-	import Icon from './Icon.svelte';
+	import Avatar from './Avatar.svelte';
+	import { Check, Plus } from '@lucide/svelte';
 
-	let { station }: { station: Station } = $props();
-	const library = $derived(station.state?.library ?? []);
+	// Also used for "Recently played" (history), with a collapsed limit.
+	let {
+		station,
+		tracks,
+		title = 'Library',
+		empty = 'Every track anyone adds lands here, ready to queue again.',
+		limit = Infinity
+	}: { station: Station; tracks?: Track[]; title?: string; empty?: string; limit?: number } = $props();
+	const library = $derived(tracks ?? station.state?.library ?? []);
+	const hid = $props.id();
+	let expanded = $state(false);
+	const shown = $derived(expanded ? library : library.slice(0, limit));
 	// Brief "Queued" confirmation per track.
 	let flashed = $state<string | null>(null);
 
@@ -20,24 +31,29 @@
 	}
 </script>
 
-<section aria-labelledby="lib-h">
-	<h2 class="section-title" id="lib-h">
-		Library <small class="num">{library.length || ''}</small>
+<section aria-labelledby={hid}>
+	<h2 class="section-title" id={hid}>
+		{title} <small class="num">{library.length || ''}</small>
+		{#if library.length > limit}
+			<button class="more" onclick={() => (expanded = !expanded)} aria-expanded={expanded}>
+				{expanded ? 'Show less' : 'Show all'}
+			</button>
+		{/if}
 	</h2>
 	{#if library.length === 0}
-		<p class="empty">Every track anyone adds lands here, ready to queue again.</p>
+		<p class="empty">{empty}</p>
 	{:else}
 		<ul class="grid">
-			{#each library as t (t.id)}
+			{#each shown as t (t.id)}
 				<li animate:flip={{ duration: dur(280), easing: cubicOut }} in:fly={{ y: 8, duration: dur(320), easing: cubicOut }}>
 					<button class="tile" onclick={() => enqueue(t)} aria-label="Add {t.title} to the queue">
 						<Art track={t} size={44} />
 						<span class="what">
 							<span class="name" title={t.title}>{t.title}</span>
-							<span class="sub"><span class="num">{fmtTime(t.duration_ms)}</span> · {t.added_by}</span>
+							<span class="sub"><Avatar name={t.added_by} size={14} /> {t.added_by} · <span class="num">{fmtTime(t.duration_ms)}</span></span>
 						</span>
 						<span class="add" class:done={flashed === t.id} aria-hidden="true">
-							<Icon name={flashed === t.id ? 'check' : 'plus'} size={16} />
+							{#if flashed === t.id}<Check size={16} />{:else}<Plus size={16} />{/if}
 						</span>
 					</button>
 				</li>
@@ -96,8 +112,28 @@
 		font-size: 0.92rem;
 	}
 	.sub {
+		display: flex;
+		align-items: center;
+		gap: 5px;
 		color: var(--ink-3);
 		font-size: 0.78rem;
+		white-space: nowrap;
+		overflow: hidden;
+	}
+	.more {
+		margin-left: auto;
+		font-family: var(--font-body);
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: var(--ink-2);
+		padding: 2px 8px;
+		border-radius: 99px;
+	}
+	@media (hover: hover) {
+		.more:hover {
+			color: var(--ink);
+			background: var(--surface-2);
+		}
 	}
 	.add {
 		display: grid;
