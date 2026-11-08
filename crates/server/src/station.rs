@@ -15,6 +15,9 @@ const PLAY_LEAD_MS: f64 = 300.0;
 const HISTORY_LEN: usize = 20;
 const CHAT_KEEP: i64 = 500;
 const CHAT_HISTORY: i64 = 100;
+pub const MAX_QUEUE: usize = 200;
+pub const QUEUE_FULL: &str = "Queue is full";
+const MAX_PENDING_JOBS: usize = 10;
 
 pub fn now_ms() -> f64 {
     SystemTime::now()
@@ -172,13 +175,17 @@ impl Station {
         };
     }
 
-    /// Append to the queue; an idle station starts playing it.
-    pub fn push(&mut self, track: Track, added_by: &str, now: f64) {
-        self.insert(track, added_by, usize::MAX, now);
+    /// Append to the queue; an idle station starts playing it. False if the queue is full.
+    pub fn push(&mut self, track: Track, added_by: &str, now: f64) -> bool {
+        self.insert(track, added_by, usize::MAX, now)
     }
 
     /// Insert into the queue at `index` (clamped); an idle station starts playing it.
-    pub fn insert(&mut self, track: Track, added_by: &str, index: usize, now: f64) {
+    /// False (and nothing inserted) if the queue already holds `MAX_QUEUE` items.
+    pub fn insert(&mut self, track: Track, added_by: &str, index: usize, now: f64) -> bool {
+        if self.queue.len() >= MAX_QUEUE {
+            return false;
+        }
         let item = QueueItem {
             queue_id: self.next_id(),
             track,
@@ -188,6 +195,7 @@ impl Station {
         if self.current.is_none() {
             self.advance(now, true);
         }
+        true
     }
 
     pub fn remove(&mut self, queue_id: u64, now: f64) -> bool {
@@ -392,27 +400,37 @@ impl Shared {
         index: usize,
     ) -> Result<(), String> {
         let mut title = None;
-        self.change(|st, now| {
+        let queued = self.change(|st, now| {
             let Some(t) = st.track(track_id).cloned() else {
                 return false;
             };
             title = Some(t.title.clone());
-            st.insert(t, added_by, index, now);
-            true
+            st.insert(t, added_by, index, now)
         });
         let title = title.ok_or("Unknown track")?;
+        if !queued {
+            return Err(QUEUE_FULL.into());
+        }
         self.event(added_by, &format!("added {title}"));
         Ok(())
     }
 
-    pub fn add_job(&self, mut job: Job) -> u64 {
+    /// Add a queued job (clients see it via the state broadcast), unless too many are pending.
+    pub fn add_job(&self, mut job: Job) -> Result<u64, String> {
         let mut st = self.lock();
+        let pending = st
+            .jobs
+            .iter()
+            .filter(|j| matches!(j.status, JobStatus::Queued | JobStatus::Downloading))
+            .count();
+        if pending >= MAX_PENDING_JOBS {
+            return Err("Too many downloads queued, try again soon".into());
+        }
         job.id = st.next_id();
         let id = job.id;
-        self.send(json!({ "type": "job", "job": job }).to_string().into());
         st.jobs.push(job);
         self.broadcast_state(&st);
-        id
+        Ok(id)
     }
 
     /// Update a job in place and send a `job` message (no full state broadcast).
@@ -438,17 +456,24 @@ impl Shared {
             j.progress = 1.0;
             j.title = Some(track.title.clone());
         });
+        let mut queued = false;
         self.change(|st, now| {
-            st.jobs.retain(|j| j.id != id);
             if st.track(&track.id).is_none() {
                 track.added_by.clone_from(&added_by);
                 self.insert_track(&track);
                 st.library.insert(0, track.clone());
             }
-            st.push(track.clone(), &added_by, now);
+            queued = st.push(track.clone(), &added_by, now);
             true
         });
-        self.event(&added_by, &format!("added {}", track.title));
+        let what = if queued {
+            ""
+        } else {
+            " to the library (queue is full)"
+        };
+        self.event(&added_by, &format!("added {}{what}", track.title));
+        // Long enough for the client's checkmark to show.
+        self.remove_job_after(id, Duration::from_secs(3));
     }
 
     pub fn fail_job(self: &Arc<Self>, id: u64, error: String) {
@@ -457,9 +482,13 @@ impl Shared {
             j.error = Some(error);
         });
         self.broadcast_state(&self.lock());
+        self.remove_job_after(id, Duration::from_secs(300));
+    }
+
+    fn remove_job_after(self: &Arc<Self>, id: u64, delay: Duration) {
         let me = Arc::clone(self);
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(300)).await;
+            tokio::time::sleep(delay).await;
             let mut st = me.lock();
             st.jobs.retain(|j| j.id != id);
             me.broadcast_state(&st);
@@ -988,6 +1017,105 @@ mod tests {
             assert_eq!(st.position_ms, 5000.0);
             assert_eq!(order(&st), ["b", "c"]);
             assert_eq!(st.next_id, 3);
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn rt() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    fn job() -> Job {
+        Job {
+            id: 0,
+            url: String::new(),
+            status: JobStatus::Queued,
+            progress: 0.0,
+            title: None,
+            error: None,
+            added_by: "toby".into(),
+        }
+    }
+
+    #[test]
+    fn queue_is_capped() {
+        let mut st = Station::default();
+        for _ in 0..=MAX_QUEUE {
+            assert!(st.push(track("a", 1000), "x", 0.0)); // first one becomes current
+        }
+        assert_eq!(st.queue.len(), MAX_QUEUE);
+        assert!(!st.insert(track("b", 1000), "x", 0, 0.0));
+        assert_eq!(st.queue.len(), MAX_QUEUE);
+
+        let (cfg, dir) = temp_cfg("qcap");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            shared.lock().library.push(track("a", 60_000));
+            for _ in 0..=MAX_QUEUE {
+                shared.enqueue("a", "toby", usize::MAX).unwrap();
+            }
+            assert_eq!(shared.enqueue("a", "toby", 0), Err(QUEUE_FULL.into()));
+            assert_eq!(shared.lock().queue.len(), MAX_QUEUE);
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pending_jobs_are_capped() {
+        let (cfg, dir) = temp_cfg("jobcap");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            let ids: Vec<u64> = (0..MAX_PENDING_JOBS)
+                .map(|_| shared.add_job(job()).unwrap())
+                .collect();
+            let err = shared.add_job(job()).unwrap_err();
+            assert_eq!(err, "Too many downloads queued, try again soon");
+            shared.fail_job(ids[0], "x".into()); // failed jobs no longer count
+            assert!(shared.add_job(job()).is_ok());
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn done_job_lingers_then_goes() {
+        let (cfg, dir) = temp_cfg("done");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            let id = shared.add_job(job()).unwrap();
+            shared.finish_job(id, track("a", 60_000));
+            let status = |s: &Shared| s.lock().jobs.iter().find(|j| j.id == id).map(|j| j.status);
+            assert_eq!(status(&shared), Some(JobStatus::Done));
+            tokio::time::sleep(Duration::from_millis(2500)).await;
+            assert_eq!(status(&shared), Some(JobStatus::Done));
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+            assert_eq!(status(&shared), None);
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Seeking reschedules the end timer; the stale one must not skip the next track too.
+    #[test]
+    fn seek_cancels_stale_end_timer() {
+        let (cfg, dir) = temp_cfg("timer");
+        rt().block_on(async {
+            let (shared, _rx) = Shared::new(cfg).unwrap();
+            shared.lock().library.push(track("a", 200)); // first timer: ~1.7 s (lead + 200 ms)
+            shared.lock().library.push(track("b", 60_000));
+            shared.enqueue("a", "toby", usize::MAX).unwrap(); // idle: starts playing
+            shared.enqueue("b", "toby", usize::MAX).unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            shared.change(|st, now| {
+                st.seek(now, 0.0); // new end ~0.5 s from now
+                true
+            });
+            tokio::time::sleep(Duration::from_millis(2200)).await;
+            let st = shared.lock();
+            assert_eq!(st.current.as_ref().unwrap().track.id, "b");
+            let played: Vec<&str> = st.history.iter().map(|t| t.id.as_str()).collect();
+            assert_eq!(played, ["a"], "exactly one advance");
         });
         let _ = std::fs::remove_dir_all(dir);
     }
