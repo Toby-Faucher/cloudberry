@@ -198,6 +198,32 @@ html {
 .section-title .count {
 	color: var(--ink-3);
 }
+/* Right end of a section rule: an optional printed key, then the count. */
+.section-title .title-right {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 12px;
+}
+.section-title .title-key {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 24px;
+	margin: -8px 0 -6px;
+	padding: 0 8px;
+	border-radius: var(--r-sm);
+	box-shadow: inset 0 0 0 1px var(--line-2);
+	font: inherit;
+	letter-spacing: inherit;
+	text-transform: inherit;
+	color: var(--ink);
+	transition: background-color 120ms var(--ease-out);
+}
+@media (hover: hover) {
+	.section-title .title-key:hover {
+		background: var(--surface-2);
+	}
+}
 
 .card {
 	background: var(--surface);

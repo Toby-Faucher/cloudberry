@@ -10,6 +10,7 @@
 	import Listeners from '#lib/components/Listeners.svelte';
 	import Berry from '#lib/components/Berry.svelte';
 	import History from '#lib/components/History.svelte';
+	import Playlists from '#lib/components/Playlists.svelte';
 	import HeaderTools from '#lib/components/HeaderTools.svelte';
 	import ChatDock from '#lib/components/ChatDock.svelte';
 	import Toast from '#lib/components/Toast.svelte';
@@ -129,6 +130,7 @@
 					<div data-enter><AddLink {station} /></div>
 					<div data-enter><Queue {station} /></div>
 					<div data-enter><History {station} /></div>
+					<div data-enter><Playlists {station} /></div>
 					<div data-enter><Library {station} /></div>
 				</div>
 			</main>
@@ -402,6 +404,10 @@
 		z-index: 1;
 		display: grid;
 		gap: 40px;
+		min-width: 0;
+	}
+	/* Modules never widen the column (long nowrap titles truncate instead). */
+	.right > :global(*) {
 		min-width: 0;
 	}
 

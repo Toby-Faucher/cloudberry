@@ -42,6 +42,27 @@ const library = [
 	track('bbbbbbbbbbb', 'Bright Fifths', 30, [330, 495, 660], 'Sam', ['#2f855a', '#c6f6d5']),
 	track('ccccccccccc', 'Low Drone (a rather long title to check truncation in the queue)', 35, [110, 165], 'Priya')
 ];
+// Saved shared playlists (same rules and error strings as the real server).
+let nextPl = 4;
+const pl = (id, name, created_by, track_ids, source_list_id = null) => ({
+	id, name, created_by, created_at: Date.now() - id * 3.6e6, updated_at: Date.now() - id * 3.6e6, track_ids, source_list_id
+});
+let playlists = [
+	pl(1, 'Friday 4pm', 'Ana', ['aaaaaaaaaaa', 'bbbbbbbbbbb', 'ccccccccccc', 'aaaaaaaaaaa']),
+	pl(2, 'Heads down', 'Priya', ['ccccccccccc', 'bbbbbbbbbbb']),
+	pl(3, 'Mock Mix', 'Sam', ['bbbbbbbbbbb'], 'PLmockmix')
+];
+const playlistsMsg = () => ({ type: 'playlists', playlists });
+const touch = (p) => {
+	p.updated_at = Date.now();
+	playlists = [p, ...playlists.filter((x) => x.id !== p.id)];
+	broadcast(playlistsMsg());
+};
+const plName = (n) => {
+	const t = String(n ?? '').trim();
+	return [...t].length >= 1 && [...t].length <= 60 ? t : null;
+};
+const MAX_QUEUE = 200;
 let nextChat = 1;
 const chatLog = [];
 const t0 = Date.now();
@@ -134,6 +155,7 @@ wss.on('connection', (ws, req) => {
 	ws.send(JSON.stringify({ type: 'welcome', you: id }));
 	ws.send(JSON.stringify({ type: 'chat_history', messages: chatLog.slice(-100) }));
 	ws.send(JSON.stringify(libraryMsg()));
+	ws.send(JSON.stringify(playlistsMsg()));
 	pushState();
 	chat('event', name, 'joined');
 	ws.on('close', () => {
@@ -225,6 +247,67 @@ wss.on('connection', (ws, req) => {
 			case 'move': {
 				const i = st.queue.findIndex((q) => q.queue_id === msg.queue_id);
 				if (i >= 0) st.queue.splice(msg.to_index, 0, ...st.queue.splice(i, 1));
+				break;
+			}
+			case 'playlist_create': case 'playlist_rename': case 'playlist_delete': case 'playlist_add':
+			case 'playlist_remove': case 'playlist_move': case 'playlist_queue': {
+				const err = (message) => ws.send(JSON.stringify({ type: 'error', message }));
+				const known = (ids) => (ids ?? []).filter((id) => library.some((t) => t.id === id));
+				if (msg.type === 'playlist_create') {
+					const n = plName(msg.name);
+					if (!n) return err('Playlist name must be 1–60 characters');
+					if (playlists.length >= 100) return err('Too many playlists');
+					const p = pl(nextPl++, n, name, known(msg.track_ids));
+					p.created_at = Date.now();
+					touch(p);
+					return chat('event', name, `created playlist ${n}`);
+				}
+				const p = playlists.find((x) => x.id === msg.id);
+				if (!p) return err('Unknown playlist');
+				const ids = p.track_ids;
+				switch (msg.type) {
+					case 'playlist_rename': {
+						const n = plName(msg.name);
+						if (!n) return err('Playlist name must be 1–60 characters');
+						const old = p.name;
+						p.name = n;
+						touch(p);
+						return chat('event', name, `renamed playlist ${old} to ${n}`);
+					}
+					case 'playlist_delete':
+						playlists = playlists.filter((x) => x !== p);
+						broadcast(playlistsMsg());
+						return chat('event', name, `deleted playlist ${p.name}`);
+					case 'playlist_add': {
+						const add = known(msg.track_ids);
+						if (!add.length) return err('Unknown track');
+						if (ids.length + add.length > 500) return err('Playlist is full');
+						ids.push(...add);
+						return touch(p);
+					}
+					case 'playlist_remove':
+						if (!(msg.index < ids.length)) return err('No such song in that playlist');
+						ids.splice(msg.index, 1);
+						return touch(p);
+					case 'playlist_move':
+						if (!(msg.from < ids.length)) return err('No such song in that playlist');
+						ids.splice(Math.min(msg.to, ids.length - 1), 0, ...ids.splice(msg.from, 1));
+						return touch(p);
+					case 'playlist_queue': {
+						if (!ids.length) return err('That playlist is empty');
+						const order = [...ids];
+						if (msg.shuffle) order.sort(() => Math.random() - 0.5);
+						const room = MAX_QUEUE - st.queue.length;
+						const take = order.slice(0, Math.max(0, room));
+						if (!take.length) return err('Queue is full');
+						for (const id of take) st.queue.push(qi(library.find((t) => t.id === id), name));
+						const n = take.length;
+						chat('event', name, `${msg.shuffle ? 'shuffled' : 'queued'} playlist ${p.name} (${n} song${n === 1 ? '' : 's'})`);
+						if (n < order.length) err(`Queued ${n} of ${order.length}, queue is full`);
+						if (!st.current) return advance();
+						break;
+					}
+				}
 				break;
 			}
 			case 'cancel_playlist': {

@@ -4,6 +4,7 @@
 	import Art from './Art.svelte';
 	import Icon from '#lib/icons/Icon.svelte';
 	import { pop } from '#lib/motion/motion.ts';
+	import PlaylistPicker from './PlaylistPicker.svelte';
 
 	/** Just played: a row of square covers, newest first. Tap one to queue it again. */
 	let { station }: { station: Station } = $props();
@@ -33,6 +34,7 @@
 						</span>
 						<span class="cap"><span class="i num">{String(i + 1).padStart(2, '0')}</span>{t.title}</span>
 					</button>
+					<PlaylistPicker {station} ids={[t.id]} label="Add {t.title} to a playlist" triggerClass="icon-btn hist-pl" />
 				</li>
 			{/each}
 		</ul>
@@ -50,8 +52,32 @@
 		scrollbar-width: thin;
 	}
 	li {
+		position: relative;
 		flex: none;
 		width: 96px;
+	}
+	/* A small key in the cover's corner, out of the way until you point at or tab into it. */
+	li :global(.hist-pl) {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		width: 28px;
+		height: 28px;
+		background: var(--surface);
+		color: var(--ink);
+		box-shadow: inset 0 0 0 1px var(--line);
+		opacity: 0;
+		transition: opacity 120ms var(--ease-out);
+	}
+	li:hover :global(.hist-pl),
+	li:focus-within :global(.hist-pl),
+	li :global(.hist-pl[data-state='open']) {
+		opacity: 1;
+	}
+	@media (pointer: coarse) {
+		li :global(.hist-pl) {
+			opacity: 1;
+		}
 	}
 	.sleeve {
 		display: grid;

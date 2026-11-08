@@ -11,6 +11,7 @@
 	import { onMount } from 'svelte';
 	import { smear } from '#lib/motion/smear.ts';
 	import { smearAnimate } from '#lib/motion/motion.ts';
+	import PlaylistPicker from './PlaylistPicker.svelte';
 
 	let { station }: { station: Station } = $props();
 
@@ -79,7 +80,22 @@
 
 <section aria-labelledby="queue-h">
 	<h2 class="section-title" id="queue-h">
-		Up next <span class="count num">{String(items.length).padStart(2, '0')}</span>
+		Up next
+		<span class="title-right">
+			{#if items.length}
+				<PlaylistPicker
+					{station}
+					ids={items.map((r) => r.q.track.id)}
+					label="Save the queue as a playlist"
+					newOnly
+					defaultName={`Up next, ${new Date().toLocaleDateString('en', { month: 'short', day: 'numeric' })}`}
+					triggerClass="title-key"
+				>
+					<Icon name="list-plus" size={14} /> Save
+				</PlaylistPicker>
+			{/if}
+			<span class="count num">{String(items.length).padStart(2, '0')}</span>
+		</span>
 	</h2>
 
 	{#if items.length === 0}
@@ -139,6 +155,7 @@
 						>
 							<Icon name="chev-down" size={18} />
 						</button>
+						<PlaylistPicker {station} ids={[row.q.track.id]} label="Add {row.q.track.title} to a playlist" />
 						<button
 							class="icon-btn remove"
 							aria-label="Remove {row.q.track.title} from queue"

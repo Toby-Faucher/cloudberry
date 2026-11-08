@@ -52,6 +52,18 @@ export interface StationState {
 	dj_of_day: string | null;
 }
 
+/** A saved shared playlist (anyone can edit). The same track may appear more than once. */
+export interface Playlist {
+	id: number;
+	name: string;
+	created_by: string;
+	created_at: number;
+	updated_at: number;
+	track_ids: string[];
+	/** YouTube list id when it came from an import (re-importing updates it). */
+	source_list_id: string | null;
+}
+
 export const REACTIONS = ['🔥', '😂', '❤️', '👏', '🎉', '😴'] as const;
 export type Emoji = (typeof REACTIONS)[number];
 
@@ -79,7 +91,14 @@ export type ClientMsg =
 	| { type: 'insert'; track_id: string; index: number }
 	| { type: 'poke'; listener_id: number }
 	| { type: 'presence'; away: boolean }
-	| { type: 'cancel_playlist'; playlist_id: string };
+	| { type: 'cancel_playlist'; playlist_id: string }
+	| { type: 'playlist_create'; name: string; track_ids?: string[] }
+	| { type: 'playlist_rename'; id: number; name: string }
+	| { type: 'playlist_delete'; id: number }
+	| { type: 'playlist_add'; id: number; track_ids: string[] }
+	| { type: 'playlist_remove'; id: number; index: number }
+	| { type: 'playlist_move'; id: number; from: number; to: number }
+	| { type: 'playlist_queue'; id: number; shuffle: boolean };
 
 export type ServerMsg =
 	| { type: 'welcome'; you: number }
@@ -87,6 +106,8 @@ export type ServerMsg =
 	| { type: 'state'; state: StationState }
 	/** The whole library, newest first: sent before the first state and whenever it changes. */
 	| { type: 'library'; tracks: Track[] }
+	/** Saved playlists, most recently updated first: after `library` on connect and after any change. */
+	| { type: 'playlists'; playlists: Playlist[] }
 	| { type: 'job'; job: Job }
 	| { type: 'error'; message: string }
 	| { type: 'chat_history'; messages: ChatMessage[] }
