@@ -352,3 +352,28 @@ State additions: `listeners[].away: bool` (default false), `StationState.dj_of_d
 default `America/New_York`), ties → most recent reaction wins. Persist `reactions(day TEXT, name TEXT,
 count INT, last_at INT, PRIMARY KEY(day, name))`; a reaction counts toward the *current track's*
 `added_by` (not the reactor). Poke with unknown/self target → `error`.
+
+---
+
+# Playlist import (added 2026-11-07; Toby: "someone should be able to copy a whole playlist from YouTube")
+
+- `add` accepts playlist URLs: `https://www.youtube.com/playlist?list=<id>` (also m./music. hosts).
+  List id must match `^[A-Za-z0-9_-]{2,64}$`; canonical URL rebuilt before calling yt-dlp.
+- `watch?v=<vid>&list=<id>` keeps adding just the video (unchanged). The client shows an inline
+  "Add the whole playlist?" action next to that job, which sends
+  `{ "type": "add", "url": "https://www.youtube.com/playlist?list=<id>" }`.
+- Server expands with `yt-dlp --flat-playlist -J --playlist-end 50 <canonical>` (one subprocess,
+  short timeout ~60 s), then for each entry in order: already in library → enqueue immediately;
+  otherwise create a download job. Entries without an id, or with duration > 20 min when known, are
+  skipped. Truncated to fit remaining pending-job capacity (cap raised to 60 pending jobs total so a
+  50-song playlist fits; single-video adds still refused past 10 pending *single* jobs).
+- Each finished download enqueues itself as today. Downloads stay strictly one at a time, so queue
+  order follows playlist order (cached entries land first; acceptable).
+- `Job` gains optional `playlist: { id: string, title: string } | null` so the client can group rows.
+  New client → server message `{ "type": "cancel_playlist", "playlist_id": "<id>" }` drops that
+  playlist's not-yet-started jobs (a running download finishes).
+- Chat event: `added playlist <title> (N songs, M skipped)`; when truncated: `… (first 50)`.
+- Rate limiting: one `add` = one action, regardless of playlist size.
+- Tests: playlist URL validation (good/bad ids, foreign hosts, injection attempts), expansion parsing
+  from a captured `--flat-playlist -J` fixture, truncation/capacity, cached entries enqueue without a
+  job, cancel_playlist.
