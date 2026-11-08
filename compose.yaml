@@ -11,6 +11,7 @@ services:
     environment:
       CLOUDBERRY_MUSIC_DIR: /data/music
       CLOUDBERRY_DB_PATH: /data/cloudberry.db
+      TZ: America/New_York  # DJ-of-the-day day boundary
     restart: unless-stopped
     mem_limit: 512m  # yt-dlp + ffmpeg spike during downloads
     healthcheck:

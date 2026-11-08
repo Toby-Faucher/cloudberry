@@ -50,6 +50,7 @@ pub fn app(cfg: Config) -> Result<(Router, Arc<Shared>), Box<dyn std::error::Err
     let (shared, dl_rx) = Shared::new(cfg.clone())?;
     tokio::spawn(ytdl::worker(Arc::clone(&shared), dl_rx));
     tokio::spawn(loudness::backfill(Arc::clone(&shared)));
+    tokio::spawn(Arc::clone(&shared).dj_rollover());
 
     let media = Router::new()
         .route("/audio/{file}", get(audio))
@@ -137,6 +138,8 @@ enum ClientMsg {
     Seek { position_ms: f64 },
     Chat { text: String },
     React { emoji: String },
+    Poke { listener_id: u64 },
+    Presence { away: bool },
 }
 
 /// Sliding-window rate limit: at most `max` hits per 5 s.
@@ -175,6 +178,7 @@ struct Conn {
     name: String,
     chat: Limiter,
     react: Limiter,
+    last_poke: Option<Instant>,
 }
 
 async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
@@ -189,6 +193,7 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
         name,
         chat: Limiter::new(5),
         react: Limiter::new(10),
+        last_poke: None,
     };
     let welcome = json!({ "type": "welcome", "you": me }).to_string();
     let history = json!({ "type": "chat_history", "messages": history }).to_string();
@@ -216,8 +221,11 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
             }
         }
     }
-    shared.leave(me);
+    let paused = shared.leave(me);
     shared.event(&conn.name, "left");
+    if paused {
+        shared.event("Cloudberry", "paused");
+    }
     tracing::info!(id = me, name = %conn.name, "listener left");
 }
 
@@ -251,7 +259,27 @@ fn handle(shared: &Arc<Shared>, conn: &mut Conn, text: &str) -> Option<Utf8Bytes
             if conn.react.allow() {
                 let m = json!({ "type": "react", "listener_id": conn.id, "name": name, "emoji": emoji });
                 let _ = shared.tx.send(m.to_string().into());
+                shared.count_reaction();
             }
+            return None;
+        }
+        ClientMsg::Poke { listener_id } => {
+            let known = shared.lock().listeners.iter().any(|l| l.id == listener_id);
+            if listener_id == conn.id || !known {
+                return Some(error_msg("Can't poke that listener"));
+            }
+            if conn
+                .last_poke
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(2))
+            {
+                conn.last_poke = Some(Instant::now());
+                let m = json!({ "type": "poke", "from_id": conn.id, "from_name": name, "to_id": listener_id });
+                let _ = shared.tx.send(m.to_string().into());
+            }
+            return None;
+        }
+        ClientMsg::Presence { away } => {
+            shared.set_away(conn.id, away);
             return None;
         }
         ClientMsg::Add { url } => ytdl::handle_add(shared, &url, name),
