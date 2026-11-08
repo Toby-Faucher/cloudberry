@@ -40,6 +40,8 @@ RUN apt-get update \
  && useradd --uid 10001 --user-group --create-home --home-dir /home/cloudberry cloudberry
 # "latest" is resolved at build time; rebuild the image to pick up a new yt-dlp.
 ADD --chmod=755 https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux /usr/local/bin/yt-dlp
+# yt-dlp needs a JS runtime (deno by default) to solve YouTube challenges.
+COPY --from=denoland/deno:bin-2.9.8 /deno /usr/local/bin/deno
 COPY --from=server /cloudberry /usr/local/bin/cloudberry
 COPY --from=web /src/web/build /app/web/build
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
