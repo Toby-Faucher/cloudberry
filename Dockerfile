@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Needs BuildKit (default in Docker 23+ / Compose v2, which Dockge uses).
 
-# --- 1. visualizer wasm ---------------------------------------------------------
+# --- 1. wasm (visualizer, smear) ----------------------------------------------
 FROM rust:1-bookworm AS wasm
 RUN rustup target add wasm32-unknown-unknown
 WORKDIR /src
@@ -10,8 +10,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target,id=cloudberry-target-wasm \
-    cargo build -p visualizer --target wasm32-unknown-unknown --release \
- && cp target/wasm32-unknown-unknown/release/visualizer.wasm /visualizer.wasm
+    cargo build -p visualizer -p smear --target wasm32-unknown-unknown --release \
+ && cp target/wasm32-unknown-unknown/release/visualizer.wasm target/wasm32-unknown-unknown/release/smear.wasm /
 
 # --- 2. web (SvelteKit static build) ------------------------------------------------
 FROM node:22-bookworm-slim AS web
@@ -19,7 +19,7 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY web ./
-COPY --from=wasm /visualizer.wasm static/visualizer.wasm
+COPY --from=wasm /visualizer.wasm /smear.wasm static/
 RUN npm run build
 
 # --- 3. server -------------------------------------------------------------------

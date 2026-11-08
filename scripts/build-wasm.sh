@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Build the visualizer WASM and copy it to web/static/visualizer.wasm.
+# Build the WASM crates (visualizer, smear) and copy them to web/static/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-cargo build -p visualizer --target wasm32-unknown-unknown --release
+cargo build -p visualizer -p smear --target wasm32-unknown-unknown --release
 mkdir -p web/static
-cp target/wasm32-unknown-unknown/release/visualizer.wasm web/static/visualizer.wasm
-echo "web/static/visualizer.wasm ($(wc -c < web/static/visualizer.wasm) bytes)"
+for name in visualizer smear; do
+	cp "target/wasm32-unknown-unknown/release/$name.wasm" "web/static/$name.wasm"
+	echo "web/static/$name.wasm ($(wc -c < "web/static/$name.wasm") bytes)"
+done
