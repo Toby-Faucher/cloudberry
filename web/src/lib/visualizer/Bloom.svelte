@@ -74,6 +74,8 @@ void main() {
 	float lift = 0.5 + 0.5 * uEnergy + 0.3 * uBeat;
 	// Light: soft wash. Dark: deep valleys so only the ridges glow, like embers.
 	float glow = lift * mix(0.3 + 0.7 * f, 1.2 * pow(smoothstep(0.2, 0.95, f), 1.6), uDark);
+	// Aura: never washed into the page colour; flat fruit tones on the bog.
+	glow = max(glow, uAura * 0.7);
 	glow = floor(clamp(glow, 0.0, 1.0) * 3.0 + 0.5) / 3.0;
 	vec3 rgb = mix(uBg, col, glow) + amber * step(0.5, uBeat) * 0.1;
 	// Aura: a crisp blob whose edge wobbles with the field, like a die-cut shape.

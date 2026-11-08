@@ -2,7 +2,8 @@
 	import { Tooltip } from 'bits-ui';
 	import { scale } from 'svelte/transition';
 	import { backOut } from 'svelte/easing';
-	import { Bell, BellOff, Keyboard, MessageCircle } from '@lucide/svelte';
+	import { Keyboard } from '@lucide/svelte';
+	import Icon from '#lib/icons/Icon.svelte';
 	import type { Station } from '#lib/station.svelte.ts';
 	import { chatVisible, store, toggleChat, ui } from '#lib/ui.svelte.ts';
 	import { dur } from '#lib/util.ts';
@@ -42,7 +43,7 @@
 				aria-pressed={ui.notify}
 				onclick={toggleNotify}
 			>
-				{#if ui.notify}<Bell size={18} />{:else}<BellOff size={18} />{/if}
+				<Icon name={ui.notify ? "bell" : "bell-off"} size={20} />
 			</Tooltip.Trigger>
 			{@render tip(ui.notify ? 'Notifying you when your tracks start' : 'Notify me when my tracks start')}
 		</Tooltip.Root>
@@ -60,7 +61,7 @@
 			aria-expanded={chatVisible()}
 			onclick={toggleChat}
 		>
-			<MessageCircle size={18} />
+			<Icon name="chat" size={21} />
 			{#if unread}
 				<span class="badge num" in:scale={{ start: 0.4, duration: dur(260), easing: backOut }}>{unread > 9 ? '9+' : unread}</span>
 			{/if}
@@ -73,7 +74,21 @@
 	.tools {
 		display: flex;
 		align-items: center;
-		gap: 2px;
+		gap: 8px;
+	}
+	/* On the bog: small cream tiles on a hard drop; pressed ones sink. */
+	.tools :global(.icon-btn) {
+		border-radius: 12px;
+		background: var(--surface);
+		color: var(--ink);
+		box-shadow: 0 4px 0 var(--shade);
+	}
+	.tools :global(.icon-btn.on) {
+		background: var(--accent);
+		translate: 0 3px;
+		box-shadow:
+			inset 0 -3px 0 rgb(110 45 0 / 0.28),
+			0 1px 0 var(--shade);
 	}
 	.tools :global(.chat-btn) {
 		position: relative;
@@ -94,7 +109,7 @@
 		font-weight: 700;
 		background: var(--accent);
 		color: var(--on-accent);
-		box-shadow: 0 0 0 2px var(--bg);
+		box-shadow: 0 0 0 2px var(--die);
 	}
 	/* No keyboard / desktop notifications to speak of on phones (and no room). */
 	@media (pointer: coarse), (max-width: 560px) {

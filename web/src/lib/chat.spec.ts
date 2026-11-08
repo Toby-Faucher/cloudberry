@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collapsePresence, type ChatItem } from './chat';
+import { collapsePresence, matchPending, type ChatItem, type PendingChat } from './chat';
 import type { ChatMessage } from './types';
 
 let id = 0;
@@ -16,7 +16,7 @@ describe('collapsePresence', () => {
 			say('Ana', 'hi', 3000),
 			ev('Sam', 'joined', 400_000) // a separate run after a message
 		]);
-		expect(show(items)).toEqual(['~ Ana, Sam joined · Priya left', 'Ana: hi', '~ Sam joined']);
+		expect(show(items)).toEqual(['~ Ana and Sam joined, Priya left', 'Ana: hi', '~ Sam joined']);
 	});
 
 	it('hides a left + joined pair by the same name within 60 s (a reconnect)', () => {
@@ -32,7 +32,7 @@ describe('collapsePresence', () => {
 
 	it('keeps a leave and a much later rejoin', () => {
 		const items = collapsePresence([ev('Sam', 'left', 0), ev('Sam', 'joined', 61_000)]);
-		expect(show(items)).toEqual(['~ Sam joined · Sam left']);
+		expect(show(items)).toEqual(['~ Sam joined, Sam left']);
 	});
 
 	it('only pairs a join with an earlier leave, and dedupes names', () => {
@@ -43,11 +43,37 @@ describe('collapsePresence', () => {
 			ev('Bo', 'joined', 9500),
 			ev('Bo', 'joined', 9600)
 		]);
-		expect(show(items)).toEqual(['~ Ana, Bo joined']);
+		expect(show(items)).toEqual(['~ Ana and Bo joined']);
 	});
 
 	it('leaves other events and user messages alone', () => {
 		const items = collapsePresence([ev('Cloudberry', 'paused', 0), say('Ana', 'joined', 1)]);
 		expect(show(items)).toEqual(['Cloudberry: paused', 'Ana: joined']);
+	});
+
+	it('names three or more like a person would', () => {
+		const items = collapsePresence([ev('Ana', 'joined', 0), ev('Sam', 'joined', 1), ev('Bo', 'joined', 2)]);
+		expect(show(items)).toEqual(['~ Ana, Sam and Bo joined']);
+	});
+});
+
+describe('matchPending', () => {
+	const pend = (key: number, text: string): PendingChat => ({ key, text, failed: false });
+	const pending = [pend(1, 'hi'), pend(2, 'turn it up'), pend(3, 'hi')];
+
+	it('settles the oldest pending message with the same text', () => {
+		expect(matchPending(pending, say('Toby', 'hi', 0), 'Toby')).toBe(0);
+		expect(matchPending(pending, say('Toby', 'turn it up', 0), 'Toby')).toBe(1);
+	});
+
+	it('compares trimmed text (the server trims)', () => {
+		expect(matchPending([pend(1, '  yo ')], say('Toby', 'yo', 0), 'Toby')).toBe(0);
+	});
+
+	it("ignores other people's messages, events and unknown text", () => {
+		expect(matchPending(pending, say('Ana', 'hi', 0), 'Toby')).toBe(-1);
+		expect(matchPending(pending, ev('Toby', 'hi', 0), 'Toby')).toBe(-1);
+		expect(matchPending(pending, say('Toby', 'something else', 0), 'Toby')).toBe(-1);
+		expect(matchPending([], say('Toby', 'hi', 0), 'Toby')).toBe(-1);
 	});
 });

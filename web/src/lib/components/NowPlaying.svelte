@@ -4,7 +4,7 @@
 	import type { Station } from '#lib/station.svelte.ts';
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
-	import { MicVocal, Pause, Play, Volume2 } from '@lucide/svelte';
+	import Icon from '#lib/icons/Icon.svelte';
 	import { store, ui } from '#lib/ui.svelte.ts';
 	import Avatar from './Avatar.svelte';
 	import Lyrics from './Lyrics.svelte';
@@ -26,6 +26,17 @@
 	const s = $derived(station.state);
 	const cur = $derived(s?.current ?? null);
 	const durationMs = $derived(cur?.track.duration_ms ?? 0);
+
+	// The old LIVE chip, folded into the art as an on-air sticker.
+	const air = $derived(
+		station.status === 'connecting'
+			? { cls: 'tuning', text: 'tuning in' }
+			: station.status === 'reconnecting'
+				? { cls: 'lost', text: 'reconnecting' }
+				: s?.playing && cur
+					? { cls: 'on', text: 'on air' }
+					: { cls: 'off', text: 'paused' }
+	);
 
 	// Live position, advanced every animation frame from the shared timeline.
 	let pos = $state(0);
@@ -95,161 +106,161 @@
 	}
 </script>
 
-<section class="card now" aria-label="Now playing">
+<!--
+	Stacking (the Bloom bug): .now is its own stacking context. Visualizer layers sit at z -1, i.e.
+	under every in-flow block of the deck (title, controls), however far the aura bleeds. The art
+	(z 3), the on-air sticker (4), reaction floats (5) and the combo (6) sit above the deck.
+-->
+<section class="now" aria-label="Now playing">
 	<div class="stage" class:halo={viz.mode === 'halo'}>
-		<div class="glow" class:on={s?.playing} aria-hidden="true"></div>
+		<div class="disc" class:on={s?.playing} aria-hidden="true"></div>
 		{#if viz.mode !== 'bars'}<Visualizer mode={viz.mode} />{/if}
-		<div class="stack">
+		<div class="stack art-layer">
 			{#key cur?.queue_id}
 				<div class="swap" use:artIn out:artOut>
 					<div class="art-wrap">
 						{#if cur}
 							<Art track={cur.track} size="100%" />
 						{:else}
-							<div class="idle-art"><Berry bead={44} opacity={0.5} /></div>
+							<div class="idle-art"><Berry bead={44} opacity={0.6} /></div>
 						{/if}
 					</div>
 				</div>
 			{/key}
 		</div>
+		<span class="air {air.cls}" role="status">{air.text}</span>
 		<ReactionFloats {station} />
 		<ComboMeter {station} />
 	</div>
 
-	<div class="stack meta">
-		{#key cur?.queue_id}
-			<div in:trackIn out:trackOut>
-				{#if cur}
-					<h1 class="title" id="np-title" title={cur.track.title}>{cur.track.title}</h1>
-					<p class="by">added by <span class="who"><Avatar name={cur.added_by} size={22} />{cur.added_by}</span></p>
-				{:else}
-					<h1 class="title" id="np-title">The air is quiet</h1>
-					<p class="by">
-						{s?.queue.length ? 'Press play to start the next track.' : 'Paste a YouTube link to put something on.'}
-					</p>
-				{/if}
-			</div>
-		{/key}
-	</div>
-
-	<Lyrics {station} />
-
-	<div
-		class="progress"
-		class:disabled={!cur}
-		role="slider"
-		tabindex={cur ? 0 : -1}
-		aria-label="Seek"
-		aria-valuemin={0}
-		aria-valuemax={Math.round(durationMs / 1000)}
-		aria-valuenow={Math.round(shown / 1000)}
-		aria-valuetext="{fmtTime(shown)} of {fmtTime(durationMs)}"
-		onclick={seekFromPointer}
-		onkeydown={seekKey}
-	>
-		<div class="rail"><div class="fill" style:transform="scaleX({frac})"></div></div>
-	</div>
-	<div class="times num">
-		<span>{fmtTime(shown)}</span>
-		<span>{cur ? fmtTime(durationMs) : '0:00'}</span>
-	</div>
-
-	<div class="controls">
-		<div class="vol">
-			<Volume2 size={16} />
-			<Slider.Root type="single" bind:value={volume} min={0} max={1} step={0.01} class="vol-slider" aria-label="Volume (only for you)">
-				<span class="vol-rail"><Slider.Range class="vol-range" /></span>
-				<Slider.Thumb index={0} class="vol-thumb" />
-			</Slider.Root>
+	<div class="deck card">
+		<div class="stack meta">
+			{#key cur?.queue_id}
+				<div in:trackIn out:trackOut>
+					{#if cur}
+						<h1 class="title" id="np-title" title={cur.track.title}>{cur.track.title}</h1>
+						<p class="by">added by <span class="who"><Avatar name={cur.added_by} size={22} />{cur.added_by}</span></p>
+					{:else}
+						<h1 class="title" id="np-title">Dead air</h1>
+						<p class="by">
+							{s?.queue.length ? 'Hit play and the next one starts.' : 'Drop a YouTube link and get this going.'}
+						</p>
+					{/if}
+				</div>
+			{/key}
 		</div>
 
-		<button
-			class="play"
-			aria-label={s?.playing ? 'Pause for everyone' : 'Play for everyone'}
-			disabled={!cur && !s?.queue.length}
-			onclick={() => station.togglePlay()}
+		<Lyrics {station} />
+
+		<div
+			class="progress"
+			class:disabled={!cur}
+			role="slider"
+			tabindex={cur ? 0 : -1}
+			aria-label="Seek"
+			aria-valuemin={0}
+			aria-valuemax={Math.round(durationMs / 1000)}
+			aria-valuenow={Math.round(shown / 1000)}
+			aria-valuetext="{fmtTime(shown)} of {fmtTime(durationMs)}"
+			onclick={seekFromPointer}
+			onkeydown={seekKey}
 		>
-			{#if s?.playing}<Pause size={30} fill="currentColor" strokeWidth={0} />{:else}<Play
-					size={30}
-					fill="currentColor"
-					strokeWidth={0}
-					class="play-glyph"
-				/>{/if}
-		</button>
-
-		<div class="right">
-			{#if ui.lines}
-				<button
-					class="icon-btn"
-					class:on={ui.lyrics}
-					aria-label="Lyrics"
-					aria-pressed={ui.lyrics}
-					title={ui.lyrics ? 'Hide lyrics' : 'Show lyrics'}
-					onclick={() => store('cloudberry.lyrics', (ui.lyrics = !ui.lyrics))}
-				>
-					<MicVocal size={18} />
-				</button>
-			{/if}
-			<HoldSkip {station} disabled={!cur} />
+			<div class="rail"><div class="fill" style:transform="scaleX({frac})"></div></div>
 		</div>
+		<div class="times num">
+			<span>{fmtTime(shown)}</span>
+			<span>{cur ? fmtTime(durationMs) : '0:00'}</span>
+		</div>
+
+		<div class="controls">
+			<div class="vol">
+				<Icon name="volume" size={20} />
+				<Slider.Root type="single" bind:value={volume} min={0} max={1} step={0.01} class="vol-slider" aria-label="Volume (only for you)">
+					<span class="vol-rail"><Slider.Range class="vol-range" /></span>
+					<Slider.Thumb index={0} class="vol-thumb" />
+				</Slider.Root>
+			</div>
+
+			<button
+				class="play"
+				aria-label={s?.playing ? 'Pause for everyone' : 'Play for everyone'}
+				disabled={!cur && !s?.queue.length}
+				onclick={() => station.togglePlay()}
+			>
+				<span class="glyph" class:is-play={!s?.playing}><Icon name={s?.playing ? 'pause' : 'play'} size={34} /></span>
+			</button>
+
+			<div class="right">
+				{#if ui.lines}
+					<button
+						class="icon-btn"
+						class:on={ui.lyrics}
+						aria-label="Lyrics"
+						aria-pressed={ui.lyrics}
+						title={ui.lyrics ? 'Hide lyrics' : 'Show lyrics'}
+						onclick={() => store('cloudberry.lyrics', (ui.lyrics = !ui.lyrics))}
+					>
+						<Icon name="mic" size={20} />
+					</button>
+				{/if}
+				<HoldSkip {station} disabled={!cur} />
+			</div>
+		</div>
+
+		<ReactionBar {station} />
+
+		{#if viz.mode === 'bars'}<Visualizer mode="bars" />{/if}
+		<ModeSwitch />
 	</div>
-
-	<ReactionBar {station} />
-
-	{#if viz.mode === 'bars'}<Visualizer mode="bars" />{/if}
-	<ModeSwitch />
 </section>
 
 <style>
 	.now {
-		padding: 28px;
+		position: relative;
+		isolation: isolate;
 		display: flex;
 		flex-direction: column;
-		overflow: hidden;
 	}
 
+	/* ---------- the art: the one big thing on the page ---------- */
 	.stage {
-		position: relative;
-		width: min(100%, 340px);
-		margin: 8px auto 24px;
+		position: relative; /* containing block for the visualizers; NOT a stacking context */
+		width: min(100%, 372px);
+		margin: 6px auto 0;
+	}
+	.stage :global(canvas),
+	.stage :global(.glow),
+	.stage :global(.css),
+	.disc {
+		z-index: -1;
 	}
 	/* A flat tinted disc behind the art that swells with the music: a shape, not a glow. */
-	.glow {
+	.disc {
 		position: absolute;
-		inset: -9%;
+		inset: -8%;
 		border-radius: 50%;
 		background: var(--track-tint);
-		opacity: 0.28;
+		opacity: 0.4;
 		transform: scale(calc(0.9 + var(--energy) * 0.35));
 		will-change: transform;
 		pointer-events: none;
 	}
-	.halo .glow {
+	.halo .disc {
 		display: none; /* Halo draws its own disc */
 	}
-	.glow:not(.on) {
-		opacity: 0.16;
+	.disc:not(.on) {
+		opacity: 0.25;
 		transform: scale(0.9);
 		transition:
 			opacity 1.2s var(--ease-out),
 			transform 1.2s var(--ease-out);
 	}
 
-	/* Visualizer: art breathes on beats; Halo turns it into a disc inside the ring. */
-	.stage > .stack {
-		scale: var(--viz-pulse, 1);
+	.art-layer {
+		position: relative;
+		z-index: 3;
+		scale: var(--viz-pulse, 1); /* art breathes on beats */
 	}
-	.art-wrap {
-		transition:
-			border-radius 480ms var(--ease-in-out),
-			scale 480ms var(--ease-in-out);
-	}
-	.halo .art-wrap {
-		border-radius: 50%;
-		scale: 0.66; /* = 2 * ART in Halo.svelte */
-	}
-
-	/* Keyed children overlap so old and new cross-fade in place. */
 	.stack {
 		display: grid;
 	}
@@ -260,15 +271,26 @@
 	.art-wrap {
 		position: relative;
 		aspect-ratio: 1;
-		border-radius: 22px;
+		border-radius: 24px;
 		overflow: hidden;
-		/* Sticker: die-cut outline + a small drop. */
-		box-shadow: var(--die-cut), var(--shadow-pop);
+		rotate: -2.5deg;
+		/* The sticker: white die-cut, hard drop onto the deck. */
+		box-shadow:
+			0 0 0 6px var(--die),
+			0 10px 0 6px var(--shade);
+		transition:
+			border-radius 480ms var(--ease-in-out),
+			scale 480ms var(--ease-in-out),
+			rotate 480ms var(--ease-in-out);
+	}
+	.halo .art-wrap {
+		border-radius: 50%;
+		scale: 0.66; /* = 2 * ART in Halo.svelte */
+		rotate: 0deg;
 	}
 	.art-wrap :global(.art) {
 		border-radius: 0;
 	}
-
 	.idle-art {
 		width: 100%;
 		height: 100%;
@@ -276,16 +298,58 @@
 		display: grid;
 		place-items: center;
 	}
+
+	/* On-air sticker, slapped on the art's corner. */
+	.air {
+		position: absolute;
+		z-index: 4;
+		top: -6px;
+		left: -10px;
+		rotate: -9deg;
+		padding: 4px 12px 5px;
+		border-radius: var(--r-sm);
+		font-family: var(--font-display);
+		font-size: 1.05rem;
+		font-weight: 700;
+		line-height: 1.1;
+		background: var(--surface-2);
+		color: var(--ink);
+		box-shadow:
+			0 0 0 3px var(--die),
+			0 4px 0 3px var(--shade);
+		pointer-events: none;
+		white-space: nowrap;
+	}
+	.air.on {
+		background: #b8361f; /* blush, deepened so cream text clears 4.5:1 */
+		color: #fbf4e2;
+	}
+	.air.lost {
+		background: var(--berry-300);
+		color: #1d2916;
+	}
+	.halo .air {
+		top: 8%;
+		left: 8%;
+	}
+
+	/* ---------- the deck: cream sticker the art overlaps ---------- */
+	.deck {
+		margin-top: -52px;
+		padding: 76px 28px 22px;
+		display: flex;
+		flex-direction: column;
+	}
 	.meta {
 		text-align: center;
 		min-height: 6.4rem;
 	}
-	/* The one focal point: display-size, confident. */
+	/* Display-size, confident; second only to the art. */
 	.title {
 		font-size: clamp(1.9rem, 1.3rem + 1.4vw, 2.6rem);
 		font-weight: 700;
 		line-height: 1.06;
-		letter-spacing: -0.03em;
+		letter-spacing: -0.025em;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
@@ -316,7 +380,7 @@
 
 	/* Progress: raw rAF scaleX, never eased (sync is sacred). */
 	.progress {
-		margin-top: 18px;
+		margin-top: 16px;
 		padding: 10px 0;
 		cursor: pointer;
 	}
@@ -324,7 +388,7 @@
 		cursor: default;
 	}
 	.rail {
-		height: 6px;
+		height: 10px;
 		border-radius: 99px;
 		background: var(--surface-2);
 		overflow: hidden;
@@ -332,7 +396,7 @@
 	}
 	@media (hover: hover) {
 		.progress:not(.disabled):hover .rail {
-			height: 10px;
+			height: 14px;
 		}
 	}
 	.fill {
@@ -344,7 +408,8 @@
 	.times {
 		display: flex;
 		justify-content: space-between;
-		font-size: 0.86rem;
+		font-family: var(--font-display);
+		font-size: 0.95rem;
 		font-weight: 600;
 		color: var(--ink-2);
 	}
@@ -353,33 +418,45 @@
 		display: grid;
 		grid-template-columns: 1fr auto 1fr;
 		align-items: center;
-		margin: 16px 0 20px;
+		margin: 14px 0 18px;
 	}
 	.play {
-		width: 76px;
-		height: 76px;
+		width: 80px;
+		height: 80px;
 		border-radius: 50%;
 		display: grid;
 		place-items: center;
 		background: var(--accent);
 		color: var(--on-accent);
-		box-shadow: var(--lip), var(--die-cut), var(--shadow);
+		box-shadow:
+			var(--lip),
+			0 0 0 4px var(--die),
+			0 6px 0 4px var(--shade-2);
 		transition:
 			background-color 160ms var(--ease-out),
-			box-shadow 200ms var(--ease-out);
+			box-shadow 120ms var(--ease-out),
+			translate 120ms var(--ease-out);
 	}
 	@media (hover: hover) {
 		.play:hover:not(:disabled) {
 			background: var(--accent-hover);
 		}
 	}
+	/* Pressed: the drop collapses and the button sinks into it. */
 	.play:active:not(:disabled) {
-		box-shadow: inset 0 3px 0 rgb(110 45 0 / 0.3), var(--die-cut);
+		translate: 0 5px;
+		box-shadow:
+			inset 0 3px 0 rgb(110 45 0 / 0.3),
+			0 0 0 4px var(--die),
+			0 1px 0 4px var(--shade-2);
 	}
 	.play:disabled {
-		opacity: 0.4;
+		opacity: 0.45;
 		cursor: not-allowed;
-		box-shadow: none;
+	}
+	/* The triangle's visual centre sits left of its box. */
+	.glyph.is-play {
+		translate: 2px 0;
 	}
 	.right {
 		display: flex;
@@ -387,17 +464,13 @@
 		align-items: center;
 		gap: 8px;
 	}
-	/* The triangle's visual centre sits left of its box. */
-	.play :global(.play-glyph) {
-		translate: 2px 0;
-	}
 
 	.vol {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		color: var(--ink-2);
-		max-width: 130px;
+		max-width: 136px;
 	}
 	.vol :global(.vol-slider) {
 		position: relative;
@@ -411,7 +484,7 @@
 	.vol-rail {
 		position: relative;
 		flex: 1;
-		height: 5px;
+		height: 8px;
 		border-radius: 99px;
 		background: var(--surface-2);
 		overflow: hidden;
@@ -422,42 +495,51 @@
 		background: var(--ink-2);
 	}
 	.vol :global(.vol-thumb) {
-		width: 16px;
-		height: 16px;
+		width: 18px;
+		height: 18px;
 		border-radius: 50%;
 		background: var(--ink);
 		border: 3px solid var(--surface);
-		box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+		box-shadow: 0 2px 0 var(--shade-2);
 		transition: scale 120ms var(--ease-out);
 	}
 	.vol :global(.vol-thumb:active) {
 		scale: 1.15;
 	}
 
-	/* Phone: compact now-playing (art beside the title) and the transport in the thumb zone. */
+	/* Phone: the art perches on the deck's corner beside the title; transport in the thumb zone. */
 	@media (max-width: 560px) {
-		.now {
-			padding: 16px;
-			display: grid;
-			grid-template-columns: 96px minmax(0, 1fr);
-			column-gap: 16px;
-			align-items: center;
-		}
-		.now > :global(*) {
-			grid-column: 1 / -1;
-		}
 		.stage {
-			grid-column: 1;
-			width: 96px;
+			position: absolute;
+			top: 0;
+			left: 14px;
+			width: 108px;
 			margin: 0;
 		}
 		.stage :global(.berry) {
 			scale: 0.5;
 		}
+		.art-wrap {
+			border-radius: 16px;
+			rotate: -4deg;
+			box-shadow:
+				0 0 0 4px var(--die),
+				0 6px 0 4px var(--shade);
+		}
+		.air {
+			font-size: 0.8rem;
+			padding: 2px 8px 3px;
+			top: -10px;
+			left: -6px;
+		}
+		.deck {
+			margin-top: 18px;
+			padding: 14px 16px 16px;
+		}
 		.meta {
-			grid-column: 2;
+			margin-left: 118px;
+			min-height: 92px;
 			text-align: left;
-			min-height: 0;
 		}
 		.title {
 			font-size: 1.35rem;
@@ -469,10 +551,10 @@
 			margin-top: 6px;
 		}
 		.progress {
-			margin-top: 10px;
+			margin-top: 6px;
 		}
 		.times {
-			margin-bottom: 16px;
+			margin-bottom: 14px;
 		}
 		.vol {
 			visibility: hidden; /* phones have hardware volume; keep the grid column */
@@ -484,9 +566,9 @@
 			right: 0;
 			bottom: 0;
 			margin: 0;
-			padding: 10px 20px max(10px, env(safe-area-inset-bottom));
+			padding: 12px 20px max(12px, env(safe-area-inset-bottom));
 			background: var(--surface);
-			border-top: 3px solid var(--line);
+			box-shadow: 0 -4px 0 var(--die);
 		}
 		.play {
 			width: 64px;

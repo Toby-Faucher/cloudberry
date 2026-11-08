@@ -85,7 +85,7 @@
 		background: var(--accent);
 		color: var(--on-accent);
 		text-align: center;
-		box-shadow: var(--lip), var(--die-cut), var(--shadow-pop);
+		box-shadow: var(--lip), var(--sticker);
 		opacity: 0;
 	}
 	h2 {

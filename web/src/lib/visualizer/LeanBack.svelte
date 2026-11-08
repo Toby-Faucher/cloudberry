@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import { Minimize2 } from '@lucide/svelte';
+	import Icon from '#lib/icons/Icon.svelte';
 	import type { Station } from '#lib/station.svelte.ts';
 	import { dur } from '#lib/util.ts';
 	import { lineAt } from '#lib/lyrics.ts';
@@ -14,7 +14,7 @@
 
 	/** Enter: the art flies up out of the dark (smeared), the words land after it. */
 	function arrive(el: HTMLElement) {
-		smearAnimate(el.querySelector<HTMLElement>('.art'), { y: [260, 0], scale: [0.6, 1], rotate: [-6, 0], opacity: [0, 1], duration: 720, ease: 'outBack(1.3)' });
+		smearAnimate(el.querySelector<HTMLElement>('.art'), { y: [260, 0], scale: [0.6, 1], rotate: [-9, -2], opacity: [0, 1], duration: 720, ease: 'outBack(1.3)' });
 		el.querySelectorAll<HTMLElement>('.meta, .lyric').forEach((m, i) =>
 			motion(m, { y: [40, 0], opacity: [0, 1], duration: 600, delay: 220 + i * 90 })
 		);
@@ -106,7 +106,6 @@
 		transition:fade={{ duration: dur(240) }}
 	>
 		<Bloom variant="fill" scale={0.5} />
-		<div class="vignette" aria-hidden="true"></div>
 
 		<div class="content" use:arrive>
 			<div class="art" bind:this={artEl}>
@@ -122,7 +121,7 @@
 			</div>
 			{#key cur?.queue_id}
 				<div class="meta" in:fade={{ duration: dur(500), delay: dur(120) }}>
-					<h1>{cur?.track.title ?? 'The air is quiet'}</h1>
+					<h1>{cur?.track.title ?? 'Dead air'}</h1>
 					{#if cur}<p>added by {cur.added_by}</p>{/if}
 				</div>
 			{/key}
@@ -137,7 +136,7 @@
 		</div>
 
 		<button class="exit" onclick={() => setLean(false)} aria-label="Exit lean-back (Esc)" title="Exit (Esc)">
-			<Minimize2 size={18} aria-hidden="true" />
+			<Icon name="shrink" size={20} />
 		</button>
 	</div>
 {/if}
@@ -156,14 +155,10 @@
 	.lean.idle {
 		cursor: none;
 	}
-	.vignette {
-		position: absolute;
-		inset: 0;
-		background: radial-gradient(80% 70% at 50% 45%, transparent 40%, color-mix(in oklab, var(--bg) 70%, transparent));
-		pointer-events: none;
-	}
+	/* Content sits above the full-bleed Bloom canvas (z 0) in the dialog's own stacking context. */
 	.content {
 		position: relative;
+		z-index: 1;
 		display: grid;
 		justify-items: center;
 		gap: clamp(20px, 4vh, 40px);
@@ -177,9 +172,10 @@
 		display: grid;
 		border-radius: 28px;
 		overflow: hidden;
+		rotate: -2deg;
 		box-shadow:
-			0 40px 90px -30px rgb(60 20 0 / 0.55),
-			0 0 0 1px rgb(255 255 255 / 0.06);
+			0 0 0 7px var(--die),
+			0 12px 0 7px var(--shade);
 		will-change: scale;
 	}
 	.art-in {
@@ -195,15 +191,26 @@
 		place-items: center;
 		background: var(--surface-2);
 	}
+	/* Words ride on cream plates so they read over any part of the field. */
+	.meta,
+	.lyric {
+		padding: 14px 26px 16px;
+		border-radius: 22px;
+		background: var(--surface);
+		color: var(--ink);
+		box-shadow: var(--sticker);
+	}
+	.meta {
+		rotate: 1deg;
+	}
 	.meta h1 {
 		font-size: clamp(1.8rem, 1.2rem + 2.6vw, 3.4rem);
 		line-height: 1.08;
-		letter-spacing: -0.035em;
+		letter-spacing: -0.03em;
 		text-wrap: balance;
-		text-shadow: 0 2px 30px color-mix(in oklab, var(--bg) 60%, transparent);
 	}
 	.meta p {
-		margin: 10px 0 0;
+		margin: 6px 0 0;
 		color: var(--ink-2);
 		font-size: clamp(0.95rem, 0.8rem + 0.5vw, 1.15rem);
 	}
@@ -219,7 +226,6 @@
 		font-weight: 600;
 		letter-spacing: -0.02em;
 		text-wrap: balance;
-		text-shadow: 0 2px 24px color-mix(in oklab, var(--bg) 60%, transparent);
 	}
 	.lyric .next {
 		font-size: clamp(0.95rem, 0.8rem + 0.6vw, 1.25rem);
@@ -234,9 +240,11 @@
 		height: 42px;
 		display: grid;
 		place-items: center;
-		border-radius: 50%;
+		z-index: 2;
+		border-radius: 12px;
 		color: var(--ink);
 		background: var(--surface);
+		box-shadow: 0 4px 0 var(--shade);
 		transition:
 			opacity 400ms ease,
 			transform 120ms var(--ease-out);

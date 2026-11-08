@@ -10,42 +10,53 @@
 }
 
 /*
- * Palette: real cloudberry (spec phase 3). Retune the fruit here and everything follows;
- * components only ever use the semantic names below (--accent*, --blush, --ok/--warn/--bad).
+ * Palette: real cloudberry on bog green (spec phases 3 + 4). Retune here and everything follows;
+ * components only use the semantic names below. Contrast numbers: docs in the phase 4 report.
  */
 :root {
-	--berry-300: #fbc77a; /* highlight, glows */
+	--berry-300: #fbc77a; /* highlight */
 	--berry-400: #f7ae4a; /* accent text on dark */
 	--berry-500: #f0912b; /* THE accent: fills, bars */
-	--berry-600: #d9741a; /* hover/pressed fill; standalone UI lines on light */
-	--berry-700: #a9550f; /* accent text on light */
-	--blush-500: #e0553a; /* unripe blush: heat (combos, hold-to-skip, live dot) */
+	--berry-600: #d9741a; /* hover/pressed fill */
+	--berry-700: #974808; /* accent text on cream (5.1:1 on surface-2) */
+	--blush-500: #e0553a; /* unripe blush: heat (combos, hold-to-skip, on air) */
+	/* Leaf greens from the logo: secondary only (meters, confetti). */
+	--leaf-500: #7db53a;
+	--leaf-300: #c8e04a;
 
-	--bg: #f5f4f2;
-	--surface: #ffffff;
-	--surface-2: #ebe9e5;
-	--ink: #211a16;
-	--ink-2: #554c45;
-	--ink-3: #6b625b;
-	--line: #e2dfda;
+	/* Bog green page; cream stickers with a white die-cut sit on it. */
+	--bg: #4b6b34;
+	--on-bg: #fbf4e2; /* text straight on the page */
+	--on-bg-2: #dfeac9;
+	--surface: #fbf4e2;
+	--surface-2: #efe4c4;
+	--ink: #1d2916;
+	--ink-2: #3f4b35;
+	--ink-3: #556049;
+	--line: #d8cca6;
 	--accent: var(--berry-500);
 	--accent-hover: var(--berry-600);
 	/* Accent strokes that must read on their own (progress, rings): >= 3:1 on surface. */
-	--accent-line: var(--berry-600);
+	--accent-line: #bb5e0e;
 	--accent-ink: var(--berry-700);
-	--accent-soft: #fdf0dc;
+	--accent-soft: #fce3bb;
 	/* Dark ink on berry in both themes: white on berry-500 is only 2.3:1. */
-	--on-accent: #211a16;
+	--on-accent: #1d2916;
 	--blush: var(--blush-500);
-	--ok: #23a05a;
-	--warn: #e0a21b;
+	--ok: #2e7d32;
+	--warn: #c98a0c;
 	--bad: var(--blush-500);
-	--danger: #c53d27;
-	--shadow: 0 6px 16px -8px rgb(40 25 10 / 0.3);
-	--shadow-pop: 0 10px 24px -10px rgb(40 25 10 / 0.4);
-	/* Sticker die-cut: a thick, even outline around the things you can grab. */
-	--die: #fffdf9;
+	--danger: #b3301b;
+
+	/* Depth is flat: one hard, offset, same-hue shadow. Never a blur. */
+	--shade: #2c4420; /* darker bog, under things on the page */
+	--shade-2: #d2c497; /* darker cream, under things on a panel */
+	--shadow: 0 4px 0 var(--shade-2);
+	--shadow-pop: 0 6px 0 var(--shade);
+	/* Sticker die-cut: a thick, even white outline, and its hard drop onto the page. */
+	--die: #fffdf5;
 	--die-cut: 0 0 0 4px var(--die);
+	--sticker: 0 0 0 4px var(--die), 0 7px 0 4px var(--shade);
 	/* Game-button lip: the fill's own darker bottom edge (flat tone, not a glow). */
 	--lip: inset 0 -5px 0 rgb(110 45 0 / 0.28);
 
@@ -53,13 +64,14 @@
 	--font-display: 'Fredoka Variable', 'Inter Variable', system-ui, sans-serif;
 	--font-body: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-	--r-sm: 10px;
+	/* Radii by role: big stickers (lg), rows (md), small controls (sm). Pills only for tiny chips. */
+	--r-sm: 8px;
 	--r-md: 14px;
-	--r-lg: 24px;
+	--r-lg: 28px;
 	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 	--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
-	/* Written every frame by the visualizer; drives the ambient glow. */
+	/* Written every frame by the visualizer. */
 	--energy: 0;
 	/* Per-track tint from the artwork (Integrations.svelte sets it inline on :root). */
 	--track-tint: var(--accent);
@@ -70,22 +82,25 @@
 
 @media (prefers-color-scheme: dark) {
 	:root {
-		--bg: #131211;
-		--surface: #1c1a18;
-		--surface-2: #272421;
-		--ink: #f4efe9;
-		--ink-2: #c4b9af;
-		--ink-3: #9a8f86;
-		--line: #312d29;
+		--bg: #1b2e1c;
+		--on-bg: #f3f1df;
+		--on-bg-2: #c9d9ae;
+		--surface: #0f1d11;
+		--surface-2: #1d3220;
+		--ink: #f3f1df;
+		--ink-2: #c9d3b4;
+		--ink-3: #a3ae8f;
+		--line: #2d4430;
 		--accent-hover: var(--berry-400);
 		--accent-line: var(--berry-500);
 		--accent-ink: var(--berry-400);
-		--accent-soft: #3a2a18;
-		--ok: #3ccf7a;
+		--accent-soft: #3b2f15;
+		--ok: #5ccf6e;
 		--warn: #f2c14a;
-		--danger: #f07a62;
-		--shadow: 0 6px 16px -8px rgb(0 0 0 / 0.6);
-		--shadow-pop: 0 10px 24px -10px rgb(0 0 0 / 0.75);
+		--danger: #f2836b;
+		--shade: #0a150b;
+		--shade-2: #050c06;
+		--die: #eef2dc;
 		color-scheme: dark;
 	}
 }
@@ -105,7 +120,6 @@ body {
 	font-size: 15px;
 	line-height: 1.5;
 	-webkit-font-smoothing: antialiased;
-	font-feature-settings: 'cv11', 'ss01';
 }
 
 h1,
@@ -147,7 +161,12 @@ textarea {
 }
 
 html {
-	scrollbar-color: color-mix(in oklab, var(--ink-3) 45%, transparent) transparent;
+	scrollbar-color: color-mix(in oklab, var(--on-bg) 45%, transparent) transparent;
+}
+
+/* Lucide is left only on minor glyphs: heavy stroke so it sits with the chunky custom set. */
+.lucide {
+	stroke-width: 2.75;
 }
 
 .num {
@@ -157,34 +176,19 @@ html {
 .card {
 	background: var(--surface);
 	border-radius: var(--r-lg);
+	box-shadow: var(--sticker);
 }
 
+/* Section headings sit straight on the bog: cream Fredoka, no badges. */
 .section-title {
 	font-family: var(--font-display);
-	font-size: 1.4rem;
+	font-size: 1.5rem;
 	font-weight: 650;
 	display: flex;
 	align-items: center;
 	gap: 0.6rem;
-	margin-bottom: 0.75rem;
-}
-
-/* Count next to a section title: a flat number block. */
-.section-title small {
-	display: inline-grid;
-	place-items: center;
-	min-width: 26px;
-	height: 26px;
-	padding: 0 7px;
-	border-radius: 8px;
-	background: var(--surface-2);
-	font-family: var(--font-display);
-	font-weight: 650;
-	font-size: 0.9rem;
-	color: var(--ink);
-}
-.section-title small:empty {
-	display: none;
+	margin-bottom: 0.8rem;
+	color: var(--on-bg);
 }
 
 .icon-btn {
@@ -211,7 +215,7 @@ html {
 .icon-btn.on {
 	color: var(--on-accent);
 	background: var(--accent);
-	box-shadow: inset 0 2px 4px rgb(80 30 0 / 0.25);
+	box-shadow: inset 0 3px 0 rgb(110 45 0 / 0.3);
 }
 @media (hover: hover) {
 	.icon-btn.on:hover:not(:disabled) {
@@ -223,40 +227,6 @@ html {
 .icon-btn:disabled {
 	opacity: 0.4;
 	cursor: not-allowed;
-}
-
-/* HUD chip: flat block, label + value. */
-.chip {
-	display: inline-flex;
-	align-items: center;
-	gap: 7px;
-	height: 34px;
-	padding: 0 12px;
-	border-radius: 11px;
-	background: var(--surface);
-	font-family: var(--font-display);
-	font-size: 0.78rem;
-	font-weight: 650;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-	color: var(--ink-2);
-	white-space: nowrap;
-}
-.chip b {
-	font-family: var(--font-body);
-	font-size: 0.88rem;
-	font-weight: 700;
-	letter-spacing: 0;
-	text-transform: none;
-	color: var(--ink);
-	font-variant-numeric: tabular-nums;
-}
-.chip .pip {
-	width: 8px;
-	height: 8px;
-	border-radius: 50%;
-	flex: none;
-	background: var(--ink-3);
 }
 
 .sr-only {

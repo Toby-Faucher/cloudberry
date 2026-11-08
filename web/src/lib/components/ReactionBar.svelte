@@ -1,46 +1,45 @@
 <script lang="ts">
 	import type { Station } from '#lib/station.svelte.ts';
 	import { REACTIONS } from '#lib/types.ts';
+	import { STICKERS } from '#lib/reactions.ts';
+	import Sticker from '#lib/icons/Sticker.svelte';
 
 	let { station }: { station: Station } = $props();
-	const labels: Record<string, string> = {
-		'🔥': 'Fire',
-		'😂': 'Laughing',
-		'❤️': 'Love',
-		'👏': 'Applause',
-		'🎉': 'Party',
-		'😴': 'Sleepy'
-	};
+	// A sticker sheet, not a toolbar: each one sits a little crooked.
+	const tilt = [-6, 4, -2, 5, -4, 3];
 </script>
 
-<div class="bar" role="group" aria-label="React for everyone">
-	{#each REACTIONS as e (e)}
-		<button class="r" aria-label="React {labels[e]}" title={labels[e]} onclick={() => station.react(e)}>{e}</button>
+<div class="sheet" role="group" aria-label="React for everyone">
+	{#each REACTIONS as e, i (e)}
+		<button class="r" style:--tilt="{tilt[i]}deg" aria-label="React {STICKERS[e].label}" title={STICKERS[e].label} onclick={() => station.react(e)}>
+			<Sticker emoji={e} size={40} />
+		</button>
 	{/each}
 </div>
 
 <style>
-	.bar {
+	.sheet {
 		display: flex;
 		justify-content: center;
-		gap: 4px;
-		margin: -4px 0 18px;
+		flex-wrap: wrap;
+		gap: 2px;
+		margin: 0 0 18px;
 	}
 	.r {
-		width: 46px;
-		height: 46px;
-		border-radius: 14px;
-		font-size: 1.35rem;
-		line-height: 1;
-		background: var(--surface-2);
+		display: grid;
+		place-items: center;
+		width: 50px;
+		height: 50px;
+		border-radius: var(--r-md);
+		rotate: var(--tilt);
 		transition:
-			background-color 160ms var(--ease-out),
-			translate 140ms var(--ease-out);
+			rotate 180ms var(--ease-out),
+			translate 180ms var(--ease-out);
 	}
 	@media (hover: hover) {
 		.r:hover {
-			background: var(--accent-soft);
-			translate: 0 -3px;
+			rotate: 0deg;
+			translate: 0 -4px;
 		}
 	}
 </style>
