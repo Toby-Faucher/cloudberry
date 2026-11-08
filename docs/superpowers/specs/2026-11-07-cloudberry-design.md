@@ -204,8 +204,8 @@ Persistence: `chat(id INT PK, kind, name, text, at)` (keep last 500), `tracks.ga
 - Optional desktop notification when a track you added starts (permission asked only on toggle).
 - Global paste: a YouTube URL pasted anywhere (not into an input) → `add`, with a toast.
 - Shortcuts: Space play/pause, N skip, / chat, ? help dialog (Bits UI dialog). Ignored while typing.
-- Undo toast (~6 s) for remove and skip ("Removed X · Undo" → `insert` at old index; skip undo
-  inserts the skipped track at index 0 and sends `skip`… no: for skip, Undo = `insert` at 0 only).
+- Undo toast (~6 s) for remove and skip. Remove → Undo sends `insert` at the old index.
+  Skip → Undo sends `insert` of the skipped track at index 0 (it plays next, from the start).
 - Media Session API: metadata (title, artwork `/art/{id}.jpg`), play/pause/nexttrack handlers,
   positionState kept updated.
 - Tab title "▶ <title> · Cloudberry" while playing, "Cloudberry" otherwise.
