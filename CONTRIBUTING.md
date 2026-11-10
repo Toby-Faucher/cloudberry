@@ -42,5 +42,6 @@ node crates/smear/scripts/smoke.mjs
 - Short imperative subject (`Server: add poke rate limit`), a body for the why if it isn't obvious.
 - One topic per PR; say how you tested it and add screenshots for UI changes
   (`scripts/screenshots.mjs` regenerates the README ones).
+- Releases and version numbers: [docs/versions.md](docs/versions.md).
 - Protocol changes: update the [design spec](docs/superpowers/specs/2026-11-07-cloudberry-design.md)
   in the same PR.

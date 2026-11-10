@@ -2,6 +2,10 @@
 resolver = "3"
 members = ["crates/*"]
 
+# One version for the whole app: server, web and wire protocol ship together (docs/versions.md).
+[workspace.package]
+version = "1.0.0"
+
 [profile.release]
 lto = true
 codegen-units = 1

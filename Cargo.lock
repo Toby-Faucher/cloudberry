@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "axum",
  "futures-util",
@@ -735,7 +735,7 @@ checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 
 [[package]]
 name = "smear"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "socket2"
@@ -1060,7 +1060,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "visualizer"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "realfft",
 ]

@@ -23,5 +23,7 @@ echo "CLOUDBERRY_PORT=$PORT" > "$STAGE/.env"
 
 # Replace the app files but never touch ./data (music + db volume).
 tar -C "$STAGE" -cz . | ssh "$HOST" "mkdir -p $DEST && rm -rf $DEST/web && tar -xz -C $DEST && chmod 755 $DEST"
+# Keep the running image as :previous for a rollback (docs/versions.md). None yet on a first deploy.
+ssh "$HOST" "docker tag cloudberry-cloudberry:latest cloudberry-cloudberry:previous 2>/dev/null || true"
 ssh "$HOST" "cd $DEST && docker compose up -d --build && docker compose ps"
 echo "Cloudberry: http://$HOST:$PORT"

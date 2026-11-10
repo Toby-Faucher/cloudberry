@@ -152,7 +152,7 @@ wss.on('connection', (ws, req) => {
 	const id = nextListener++;
 	st.listeners.push({ id, name, away: false });
 	// Same order as the real server: welcome -> chat_history -> library -> state -> chat("joined").
-	ws.send(JSON.stringify({ type: 'welcome', you: id }));
+	ws.send(JSON.stringify({ type: 'welcome', you: id, version: 'mock', build: 'mock' }));
 	ws.send(JSON.stringify({ type: 'chat_history', messages: chatLog.slice(-100) }));
 	ws.send(JSON.stringify(libraryMsg()));
 	ws.send(JSON.stringify(playlistsMsg()));

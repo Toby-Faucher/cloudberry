@@ -101,7 +101,7 @@ export type ClientMsg =
 	| { type: 'playlist_queue'; id: number; shuffle: boolean };
 
 export type ServerMsg =
-	| { type: 'welcome'; you: number }
+	| { type: 'welcome'; you: number; version: string; build: string }
 	| { type: 'pong'; t0: number; server_time: number }
 	| { type: 'state'; state: StationState }
 	/** The whole library, newest first: sent before the first state and whenever it changes. */

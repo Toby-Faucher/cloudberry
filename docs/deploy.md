@@ -66,6 +66,8 @@ your local midnight. All variables: [README](../README.md#configuration).
 ## Updating
 
 **Cloudberry** (Option A): `git pull && docker compose up -d --build`. (Option B): rerun `scripts/deploy.sh`.
+Deploy a release tag, not a branch; releases, `/api/version` and rolling back are in
+[versions.md](versions.md).
 
 **yt-dlp**: YouTube regularly breaks old versions, and the image pins whatever was "latest" at
 build time. When downloads start failing, rebuild without cache:

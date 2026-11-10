@@ -22,6 +22,10 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 use tower_http::services::{ServeDir, ServeFile};
 
+/// The release (`Cargo.toml` `[workspace.package]`) and the build id (`build.rs`).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const BUILD: &str = env!("CLOUDBERRY_BUILD");
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub music_dir: PathBuf,
@@ -82,6 +86,7 @@ pub fn app(cfg: Config) -> Result<(Router, Arc<Shared>), Box<dyn std::error::Err
         .route("/api/state", get(api_state))
         .route("/api/library", get(api_library))
         .route("/api/playlists", get(api_playlists))
+        .route("/api/version", get(api_version))
         .route("/ws", get(ws_upgrade))
         .merge(media)
         .fallback_service(site)
@@ -109,6 +114,10 @@ async fn media_file(shared: &Shared, file: &str, ext: &str, req: Request) -> Res
         Ok(res) => res.map(Body::new),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+async fn api_version() -> axum::Json<serde_json::Value> {
+    axum::Json(json!({ "version": VERSION, "build": BUILD }))
 }
 
 async fn api_state(State(shared): State<Arc<Shared>>) -> Response {
@@ -308,7 +317,8 @@ async fn client(shared: Arc<Shared>, mut socket: WebSocket, name: String) {
         last_poke: None,
         reply,
     };
-    let welcome = json!({ "type": "welcome", "you": me }).to_string();
+    let welcome =
+        json!({ "type": "welcome", "you": me, "version": VERSION, "build": BUILD }).to_string();
     let history = json!({ "type": "chat_history", "messages": history }).to_string();
     // Before the first `state` (already waiting in `rx`), so the UI never sees an empty library.
     let (library, playlists) = {

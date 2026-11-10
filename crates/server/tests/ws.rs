@@ -71,6 +71,8 @@ async fn websocket_flow() {
     let welcome = next_json(&mut ws).await;
     assert_eq!(welcome["type"], "welcome");
     let me = welcome["you"].as_u64().unwrap();
+    assert_eq!(welcome["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(welcome["build"], server::BUILD);
 
     let history = next_json(&mut ws).await;
     assert_eq!(history, json!({ "type": "chat_history", "messages": [] }));
@@ -181,6 +183,13 @@ async fn http_endpoints() {
     let r = http(&addr, "GET /api/library HTTP/1.1").await;
     assert!(r.starts_with("HTTP/1.1 200"), "{r}");
     assert!(r.ends_with("\r\n\r\n[]"), "{r}");
+    let r = http(&addr, "GET /api/version HTTP/1.1").await;
+    let want = format!(
+        "{{\"build\":\"{}\",\"version\":\"{}\"}}",
+        server::BUILD,
+        server::VERSION
+    );
+    assert!(r.ends_with(&want), "{r}");
 
     std::fs::write(dir.join("music/abcdefghijk.mp3"), vec![7u8; 1000]).unwrap();
     let r = http(

@@ -22,7 +22,12 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    tracing::info!("cloudberry listening on {}", cfg.bind);
+    tracing::info!(
+        version = server::VERSION,
+        build = server::BUILD,
+        "cloudberry listening on {}",
+        cfg.bind
+    );
     tokio::select! {
         r = axum::serve(listener, router) => if let Err(e) = r { tracing::error!("server: {e}") },
         _ = shutdown_signal() => tracing::info!("shutting down"),

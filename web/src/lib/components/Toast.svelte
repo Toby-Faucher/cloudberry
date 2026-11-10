@@ -17,7 +17,13 @@
 </script>
 
 <div class="region" role="status" aria-live="polite">
-	{#if t}
+	{#if station.updated}
+		<!-- Persistent: the tab stopped its socket because the server was redeployed. -->
+		<div class="toast" use:arrive={undefined}>
+			<span class="text">Cloudberry was updated</span>
+			<button class="undo" onclick={() => location.reload()}>Reload</button>
+		</div>
+	{:else if t}
 		{#key t.id}
 			<div class="toast" class:poke={t.kind === 'poke'} use:arrive={t.kind} out:fade={{ duration: dur(160) }}>
 				{#if t.kind === 'poke'}<Icon name="poke" size={18} />{/if}

@@ -68,6 +68,9 @@ export class Station {
 	private lastAddAt = -Infinity;
 	private lastPongAt = 0;
 	you = $state<number | null>(null);
+	/** The server was redeployed since this tab loaded: stop and ask for a reload (never reload by itself). */
+	updated = $state(false);
+	private build: string | null = null;
 	status = $state<ConnStatus>('connecting');
 	toast = $state<Toast | null>(null);
 	/** Newest last; capped. */
@@ -179,7 +182,7 @@ export class Station {
 
 	send(msg: ClientMsg) {
 		if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
-		else this.showToast('Not connected — reconnecting…');
+		else if (!this.updated) this.showToast('Not connected — reconnecting…');
 	}
 
 	close() {
@@ -320,6 +323,12 @@ export class Station {
 	private handle(msg: ServerMsg) {
 		switch (msg.type) {
 			case 'welcome':
+				this.build ??= msg.build;
+				if (msg.build !== this.build) {
+					this.updated = true;
+					this.close();
+					return;
+				}
 				this.you = msg.you;
 				break;
 			case 'pong':

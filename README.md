@@ -122,7 +122,7 @@ web/                 SvelteKit SPA (Svelte 5, adapter-static) served by the serv
 web/scripts/         mock-server.mjs for UI work without cargo
 scripts/             build-wasm.sh, deploy.sh, screenshots.mjs
 deploy/              Dockerfile.prebuilt for scripts/deploy.sh
-docs/                architecture, deploy guide, design spec
+docs/                architecture, deploy guide, versions and releases, design spec
 ```
 
 ## Tech stack
