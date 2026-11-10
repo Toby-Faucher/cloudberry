@@ -21,6 +21,10 @@ The version lives in two places, always the same number: `version` in `Cargo.tom
   day, synced lyrics, the Rust→WASM visualizer (Halo, Bloom, Bars) and lean-back shader pack, the
   smear motion engine, the phase 6 hardware look, saved shared playlists, and the version
   handshake (below). Not verified: a YouTube download on the live instance after the deploy.
+- **v1.1.0**: mute for you only. The fader's Vol label is now a mute switch (it reads Muted, in
+  accent ink, while on) and `M` toggles it. Remembered like the volume; moving the fader unmutes.
+  Not on phones, where the fader is hidden. No database change. Not verified: dark mode, a screen
+  reader, and listening on real speakers.
 
 ## How a release is cut
 
