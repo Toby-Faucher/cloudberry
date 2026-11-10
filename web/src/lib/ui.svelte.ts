@@ -35,6 +35,8 @@ export const ui = $state({
 	help: false,
 	/** Show synced lyrics when the current track has them (remembered). */
 	lyrics: stored('cloudberry.lyrics', true),
+	/** Silenced for you only; the station keeps playing for everyone (remembered). */
+	muted: stored('cloudberry.muted', false),
 	/** Desktop notification when a track you added starts (remembered). */
 	notify: stored('cloudberry.notify', false),
 	/** Synced lyrics for the current track, null when none (also for lean-back mode). */
@@ -55,6 +57,10 @@ export function focusChat() {
 	// Focus now if it's already on screen (so fast typing lands in it), else once it mounts.
 	if (!document.getElementById('chat-input')) requestAnimationFrame(() => requestAnimationFrame(focus));
 	else focus();
+}
+
+export function toggleMute() {
+	store('cloudberry.muted', (ui.muted = !ui.muted));
 }
 
 export function toggleChat() {
