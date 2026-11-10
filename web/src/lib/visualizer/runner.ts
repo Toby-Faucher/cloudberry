@@ -125,6 +125,8 @@ export function createRunner(canvas: HTMLCanvasElement, opts: { aura?: boolean; 
 		accent = css('--accent', '#f0912b');
 	};
 	dark.addEventListener('change', onScheme);
+	const accentObs = new MutationObserver(onScheme); // accent picker swaps data-accent on <html>
+	accentObs.observe(document.documentElement, { attributeFilter: ['data-accent'] });
 
 	let cur = SHADERS[0];
 	let prev: ShaderDef | null = null;
@@ -193,6 +195,7 @@ export function createRunner(canvas: HTMLCanvasElement, opts: { aura?: boolean; 
 		destroy() {
 			ro.disconnect();
 			dark.removeEventListener('change', onScheme);
+			accentObs.disconnect();
 			gl.getExtension('WEBGL_lose_context')?.loseContext();
 		}
 	};

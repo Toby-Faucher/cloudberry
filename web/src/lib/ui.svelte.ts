@@ -20,6 +20,26 @@ export function store(key: string, v: boolean) {
 	}
 }
 
+/** Accent presets (ramps live in app.css under :root[data-accent]); the first is the default. */
+export const ACCENTS = [
+	{ id: 'berry', label: 'Cloudberry', swatch: '#f28322' },
+	{ id: 'pink', label: 'Pink', swatch: '#f2609f' },
+	{ id: 'lime', label: 'Lime', swatch: '#9ccc1f' },
+	{ id: 'cyan', label: 'Cyan', swatch: '#1fb8d6' },
+	{ id: 'violet', label: 'Violet', swatch: '#9b7bff' },
+	{ id: 'gold', label: 'Gold', swatch: '#f2c21b' }
+] as const;
+export type AccentId = (typeof ACCENTS)[number]['id'];
+
+function storedAccent(): AccentId {
+	try {
+		const v = localStorage.getItem('cloudberry.accent');
+		return ACCENTS.find((a) => a.id === v)?.id ?? 'berry';
+	} catch {
+		return 'berry';
+	}
+}
+
 export const WIDE_QUERY = '(min-width: 1180px)';
 export const PHONE_QUERY = '(max-width: 560px)';
 
@@ -39,6 +59,10 @@ export const ui = $state({
 	muted: stored('cloudberry.muted', false),
 	/** Desktop notification when a track you added starts (remembered). */
 	notify: stored('cloudberry.notify', false),
+	/** Your accent colour, applies to you only (remembered; app.html applies it before paint). */
+	accent: storedAccent(),
+	/** Logo mark URL tinted to the accent; null while a non-default tint is being drawn (no orange flash). */
+	logo: (storedAccent() === 'berry' ? '/logo-mark.png' : null) as string | null,
 	/** Synced lyrics for the current track, null when none (also for lean-back mode). */
 	lines: null as LrcLine[] | null,
 	/** Highest chat message id the user has had on screen. */
@@ -47,7 +71,18 @@ export const ui = $state({
 	dj: null as string | null
 });
 
-export const chatVisible = () => (ui.wide ? ui.dock : ui.drawer);
+export function setAccent(id: AccentId) {
+	ui.accent = id;
+	if (id === 'berry') delete document.documentElement.dataset.accent;
+	else document.documentElement.dataset.accent = id;
+	try {
+		localStorage.setItem('cloudberry.accent', id);
+	} catch {
+		/* private mode */
+	}
+}
+
+export const chatVisible =() => (ui.wide ? ui.dock : ui.drawer);
 
 /** Open the chat (dock or drawer) and focus its input. */
 export function focusChat() {

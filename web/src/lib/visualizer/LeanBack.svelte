@@ -167,7 +167,7 @@
 		--lb-ink: #1e1f21;
 		--lb-ink-2: #5d5f63;
 		--lb-line: #1e1f21;
-		--lb-orange: #f0912b;
+		--lb-orange: var(--accent, #f0912b); /* follows your accent */
 		--lb-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 		--lb-sans: 'Inter Variable', 'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif;
 		position: fixed;

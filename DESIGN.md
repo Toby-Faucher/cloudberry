@@ -145,7 +145,7 @@ Restrained: tinted neutrals plus one orange that always means "live / yours / ac
 - **Rule** (#cdcdc7 / #2c2c2a): decorative hairlines. **Rule Strong** (#84847e / #76766f): borders that identify a control (≥3:1).
 
 ### Named Rules
-**The One Orange Rule.** Orange marks what is live, yours, or the next action. If an element is neither, it is graphite.
+**The One Orange Rule.** Orange marks what is live, yours, or the next action. If an element is neither, it is graphite. Listeners can swap orange for another preset accent (pink, lime, cyan, violet, gold; `:root[data-accent]` in app.css); the rule holds for whichever one is chosen, and every preset ramp keeps the contrast ratios listed here.
 
 **The Labelled Lamp Rule.** A lamp never carries meaning alone; it sits beside a word (On air, Next, Halo, You).
 

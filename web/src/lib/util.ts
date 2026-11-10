@@ -45,12 +45,12 @@ export function isTyping(t: EventTarget | null): boolean {
 const BRAND = [240, 145, 43]; // --berry-500 #F0912B
 
 /**
- * Per-track tint: the artwork's average colour pulled halfway toward brand berry,
+ * Per-track tint: the artwork's average colour pulled halfway toward the accent (`brand`, rgb),
  * then held to a saturation/lightness band so it never goes muddy, grey or neon and
  * reads on both themes. Returns a CSS rgb() string.
  */
-export function trackTint(rgb: readonly number[]): string {
-	const [R, G, B] = rgb.map((v, i) => (v * 0.5 + BRAND[i] * 0.5) / 255);
+export function trackTint(rgb: readonly number[], brand: readonly number[] = BRAND): string {
+	const [R, G, B] = rgb.map((v, i) => (v * 0.5 + brand[i] * 0.5) / 255);
 	// RGB -> HSL
 	const max = Math.max(R, G, B);
 	const min = Math.min(R, G, B);

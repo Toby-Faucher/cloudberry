@@ -110,6 +110,86 @@
 	}
 }
 
+/*
+ * Accent presets (per listener, ui.svelte.ts sets data-accent on <html>). Each ramp is hand-tuned:
+ * graphite on 500 >= 5.8:1, 700 as text >= 4.8:1 on the light chassis, dark 700 >= 8:1, rim >= 3:1.
+ */
+:root[data-accent='pink'] {
+	--berry-300: #ffb8d6;
+	--berry-400: #ff8fbf;
+	--berry-500: #f2609f;
+	--berry-600: #e0468a;
+	--berry-700: #b0185e;
+	--led: #ff4f9a;
+	--led-rim: #b0185e;
+	--accent-soft: #fbdbe9;
+}
+:root[data-accent='lime'] {
+	--berry-300: #d4f08a;
+	--berry-400: #b8e05a;
+	--berry-500: #9ccc1f;
+	--berry-600: #86b30f;
+	--berry-700: #4a6600;
+	--led: #a6e01a;
+	--led-rim: #4a6600;
+	--accent-soft: #e6f3c4;
+}
+:root[data-accent='cyan'] {
+	--berry-300: #96e6f5;
+	--berry-400: #5fd4ec;
+	--berry-500: #1fb8d6;
+	--berry-600: #0fa0bd;
+	--berry-700: #00657a;
+	--led: #12c4e8;
+	--led-rim: #00657a;
+	--accent-soft: #cdeef5;
+}
+:root[data-accent='violet'] {
+	--berry-300: #d0c2ff;
+	--berry-400: #b8a2ff;
+	--berry-500: #9b7bff;
+	--berry-600: #8463f0;
+	--berry-700: #5a36c9;
+	--led: #9673ff;
+	--led-rim: #5a36c9;
+	--accent-soft: #e4dcff;
+}
+:root[data-accent='gold'] {
+	--berry-300: #ffe58f;
+	--berry-400: #ffd34d;
+	--berry-500: #f2c21b;
+	--berry-600: #dcab05;
+	--berry-700: #765a00;
+	--led: #ffc800;
+	--led-rim: #765a00;
+	--accent-soft: #fbefc4;
+}
+@media (prefers-color-scheme: dark) {
+	:root[data-accent] {
+		--led-rim: var(--led);
+	}
+	:root[data-accent='pink'] {
+		--berry-700: #ff8fbf;
+		--accent-soft: #3a1626;
+	}
+	:root[data-accent='lime'] {
+		--berry-700: #b8e05a;
+		--accent-soft: #26300e;
+	}
+	:root[data-accent='cyan'] {
+		--berry-700: #5fd4ec;
+		--accent-soft: #0f2c33;
+	}
+	:root[data-accent='violet'] {
+		--berry-700: #b8a2ff;
+		--accent-soft: #241c3d;
+	}
+	:root[data-accent='gold'] {
+		--berry-700: #ffd34d;
+		--accent-soft: #33290a;
+	}
+}
+
 *,
 *::before,
 *::after {

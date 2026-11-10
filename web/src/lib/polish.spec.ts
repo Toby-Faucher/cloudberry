@@ -80,4 +80,9 @@ describe('trackTint', () => {
 		expect(r).toBeGreaterThan(b + 80); // saturated, warm
 		expect(trackTint([0, 0, 0])).not.toBe('rgb(0 0 0)');
 	});
+	it('leans toward the chosen accent', () => {
+		const [r, g, b] = trackTint([128, 128, 128], [31, 184, 214]).match(/\d+/g)!.map(Number);
+		expect(b).toBeGreaterThan(r + 80); // cyan accent: cool, not warm
+		expect(g).toBeGreaterThan(r + 40);
+	});
 });
