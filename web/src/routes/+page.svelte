@@ -9,6 +9,7 @@
 	import Library from '#lib/components/Library.svelte';
 	import Listeners from '#lib/components/Listeners.svelte';
 	import Berry from '#lib/components/Berry.svelte';
+	import AccentDial from '#lib/components/AccentDial.svelte';
 	import History from '#lib/components/History.svelte';
 	import Playlists from '#lib/components/Playlists.svelte';
 	import HeaderTools from '#lib/components/HeaderTools.svelte';
@@ -108,7 +109,7 @@
 		<div class="app" use:entrance>
 			<header>
 				<div class="brand" data-enter>
-					<Berry bead={7} />
+					<AccentDial />
 					<span class="wordmark">cloudberry</span>
 				</div>
 				<div class="hud-slot" data-enter><Hud {station} /></div>

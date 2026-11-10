@@ -1,5 +1,6 @@
 <script lang="ts">
-	// The real sticker mark (web/static/logo-mark.png, 96×96). `bead` is the old drupelet size;
+	import { ui } from '#lib/ui.svelte.ts';
+	// The real sticker mark (web/static/logo-mark.png, 96×96, tinted to your accent via ui.logo). `bead` is the old drupelet size;
 	// the mark spans ~3 beads so existing call sites keep their footprint. Decorative: the
 	// wordmark or the surrounding UI names it.
 	let { bead = 22, opacity = 1 }: { bead?: number | string; opacity?: number } = $props();
@@ -7,7 +8,7 @@
 
 <img
 	class="berry"
-	src="/logo-mark.png"
+	src={ui.logo}
 	alt=""
 	width="96"
 	height="96"

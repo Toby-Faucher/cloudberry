@@ -10,6 +10,13 @@
 		<link rel="icon" href="%sveltekit.assets%/icon-192.png" type="image/png" sizes="192x192" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
 		<title>Cloudberry</title>
+		<script>
+			// Accent before first paint (no orange flash); ui.svelte.ts validates and owns it after.
+			try {
+				var a = localStorage.getItem('cloudberry.accent');
+				if (a && a !== 'berry') document.documentElement.dataset.accent = a;
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body>

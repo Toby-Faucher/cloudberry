@@ -2,7 +2,8 @@
 	import { untrack } from 'svelte';
 	import { FastAverageColor } from 'fast-average-color';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { ui } from '#lib/ui.svelte.ts';
+	import { ACCENTS, ui } from '#lib/ui.svelte.ts';
+	import { tinted } from '#lib/logo.ts';
 	import { trackTint } from '#lib/util.ts';
 
 	/**
@@ -73,10 +74,33 @@
 		return () => handlers.forEach(([a]) => ms.setActionHandler(a, null));
 	});
 
+	// --- logo mark + favicons follow your accent (orange pixels recoloured, see logo.ts) ---
+	const icons =
+		typeof document === 'undefined'
+			? []
+			: [...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="apple-touch-icon"]')].map((l) => ({
+					l,
+					src: l.getAttribute('href')!
+				}));
+	$effect(() => {
+		const hex = ACCENTS.find((a) => a.id === ui.accent)!.swatch;
+		const berry = ui.accent === 'berry';
+		let live = true;
+		const logo = berry ? Promise.resolve('/logo-mark.png') : tinted('/logo-mark.png', hex);
+		logo.then((u) => live && (ui.logo = u)).catch(() => live && (ui.logo = '/logo-mark.png'));
+		for (const { l, src } of icons) {
+			if (berry) l.href = src;
+			else tinted(src, hex).then((u) => live && (l.href = u)).catch(() => {});
+		}
+		return () => (live = false);
+	});
+
 	// --- per-track tint (--track-tint on :root, animated via @property in app.css) ---
 	const fac = new FastAverageColor();
 	$effect(() => {
 		const id = trackId;
+		const hex = ACCENTS.find((a) => a.id === ui.accent)!.swatch;
+		const brand = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 		const root = document.documentElement;
 		if (!id || !thumb) {
 			root.style.removeProperty('--track-tint');
@@ -85,7 +109,7 @@
 		let live = true;
 		fac
 			.getColorAsync(`/art/${encodeURIComponent(id)}.jpg`, { algorithm: 'sqrt', mode: 'speed' })
-			.then((c) => live && root.style.setProperty('--track-tint', trackTint(c.value)))
+			.then((c) => live && root.style.setProperty('--track-tint', trackTint(c.value, brand)))
 			.catch(() => live && root.style.removeProperty('--track-tint'));
 		return () => (live = false);
 	});
