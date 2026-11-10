@@ -9,6 +9,7 @@
 		| 'expand'
 		| 'shrink'
 		| 'volume'
+		| 'volume-off'
 		| 'check'
 		| 'close'
 		| 'mic'
@@ -77,9 +78,9 @@
 		<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
 	{:else if name === 'shrink'}
 		<path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />
-	{:else if name === 'volume'}
+	{:else if name === 'volume' || name === 'volume-off'}
 		<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4Z" />
-		<path d="M15.5 9.5v5M18.5 7.5v9" />
+		{#if name === 'volume'}<path d="M15.5 9.5v5M18.5 7.5v9" />{:else}<path d="M15 9.5l5 5M20 9.5l-5 5" />{/if}
 	{:else if name === 'check'}
 		<path d="M5 12.5 9.5 17 19 7.5" />
 	{:else if name === 'close'}

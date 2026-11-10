@@ -3,6 +3,7 @@
 	export const SHORTCUTS: [keys: string[], what: string][] = [
 		[['Space'], 'Play / pause for everyone'],
 		[['N'], 'Hold to skip (with undo)'],
+		[['M'], 'Mute / unmute (only for you)'],
 		[['/'], 'Chat'],
 		[['?'], 'This help'],
 		[['F'], 'Lean-back (fullscreen visualizer)'],
@@ -16,7 +17,7 @@
 	import { Dialog } from 'bits-ui';
 	import Icon from '#lib/icons/Icon.svelte';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { focusChat, ui } from '#lib/ui.svelte.ts';
+	import { focusChat, toggleMute, ui } from '#lib/ui.svelte.ts';
 	import { isTyping, isYouTubeUrl } from '#lib/util.ts';
 	import { linkParts } from '#lib/playlist.ts';
 	import { pressSkip, releaseSkip } from '#lib/hold.svelte.ts';
@@ -51,6 +52,10 @@
 			case 'N':
 				// Like the button: hold to skip, a tap only shows the hint.
 				if (!e.repeat) pressSkip(station);
+				break;
+			case 'm':
+			case 'M':
+				if (!e.repeat) toggleMute();
 				break;
 			case '/':
 				e.preventDefault(); // don't type the slash into the input we're about to focus

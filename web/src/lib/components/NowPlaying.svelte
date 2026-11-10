@@ -5,7 +5,7 @@
 	import { dur, fmtTime } from '#lib/util.ts';
 	import Art from './Art.svelte';
 	import Icon from '#lib/icons/Icon.svelte';
-	import { store, ui } from '#lib/ui.svelte.ts';
+	import { store, toggleMute, ui } from '#lib/ui.svelte.ts';
 	import Avatar from './Avatar.svelte';
 	import Lyrics from './Lyrics.svelte';
 	import ReactionBar from './ReactionBar.svelte';
@@ -60,7 +60,7 @@
 		return Number.isFinite(v) && localStorage.getItem('cloudberry.volume') !== null ? v : 0.8;
 	}
 	$effect(() => {
-		station.player.setVolume(volume * volume); // perceptual-ish curve
+		station.player.setVolume(ui.muted ? 0 : volume * volume); // perceptual-ish curve
 		localStorage.setItem('cloudberry.volume', String(volume));
 	});
 
@@ -192,11 +192,20 @@
 
 	<div class="controls">
 		<div class="vol">
-			<Slider.Root type="single" bind:value={volume} min={0} max={1} step={0.01} class="fader" aria-label="Volume (only for you)">
+			<Slider.Root type="single" bind:value={volume} onValueChange={() => ui.muted && toggleMute()} min={0} max={1} step={0.01} class="fader" aria-label="Volume (only for you)">
 				<span class="fader-rail"><Slider.Range class="fader-range" /></span>
 				<Slider.Thumb index={0} class="fader-cap" />
 			</Slider.Root>
-			<span class="label cap-label"><Icon name="volume" size={12} />Vol</span>
+			<button
+				class="label cap-label mute"
+				class:on={ui.muted}
+				aria-label="Mute (only for you)"
+				aria-pressed={ui.muted}
+				title={ui.muted ? 'Unmute (M)' : 'Mute for you only (M)'}
+				onclick={toggleMute}
+			>
+				<Icon name={ui.muted ? 'volume-off' : 'volume'} size={12} />{ui.muted ? 'Muted' : 'Vol'}
+			</button>
 		</div>
 
 		<div class="keys">
@@ -547,6 +556,23 @@
 		top: 13px;
 		height: 2px;
 		background: var(--accent);
+	}
+	/* The fader's label doubles as its mute switch: lit orange while muted. */
+	.mute {
+		min-height: 24px;
+		padding: 0 4px;
+		margin-left: -4px;
+		border-radius: var(--r-sm);
+		cursor: pointer;
+		transition: color 120ms var(--ease-out);
+	}
+	@media (hover: hover) {
+		.mute:hover {
+			color: var(--ink);
+		}
+	}
+	.mute.on {
+		color: var(--accent-ink);
 	}
 	.vol :global(.fader-cap:active) {
 		cursor: grabbing;
