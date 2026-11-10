@@ -25,6 +25,10 @@ The version lives in two places, always the same number: `version` in `Cargo.tom
   accent ink, while on) and `M` toggles it. Remembered like the volume; moving the fader unmutes.
   Not on phones, where the fader is hidden. No database change. Not verified: dark mode, a screen
   reader, and listening on real speakers.
+- **v1.2.0**: pick your accent colour. Click the header berry and six berry logos fan out in a
+  quarter circle (Cloudberry, Pink, Lime, Cyan, Violet, Gold); arrow keys and Enter work too. Just
+  for you, remembered in the browser. The logo, favicons, visualizer and per-track tint follow it.
+  No database change. Not verified: a screen reader, and the favicon swap in Safari and Firefox.
 
 ## How a release is cut
 
