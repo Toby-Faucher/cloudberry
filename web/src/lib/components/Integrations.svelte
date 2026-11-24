@@ -2,13 +2,14 @@
 	import { untrack } from 'svelte';
 	import { FastAverageColor } from 'fast-average-color';
 	import type { Station } from '#lib/station.svelte.ts';
-	import { ACCENTS, ui } from '#lib/ui.svelte.ts';
+	import { ACCENTS, toggleMute, ui } from '#lib/ui.svelte.ts';
+	import { closeMini, miniSupported, openMini } from '#lib/mini.svelte.ts';
 	import { tinted } from '#lib/logo.ts';
 	import { trackTint } from '#lib/util.ts';
 
 	/**
 	 * Headless: everything that reflects the station into the browser around the page:
-	 * tab title, Media Session, per-track tint, "your track started" notification.
+	 * tab title, Media Session, mini player, per-track tint, "your track started" notification.
 	 */
 	let { station }: { station: Station } = $props();
 
@@ -45,7 +46,8 @@
 	});
 	$effect(() => {
 		if (!ms) return;
-		ms.playbackState = trackId ? (playing ? 'playing' : 'paused') : 'none';
+		// "Paused" while muted too, so the OS key / headset offers play (= unmute) back.
+		ms.playbackState = trackId ? (playing && !ui.muted ? 'playing' : 'paused') : 'none';
 		// Re-anchor the OS scrubber whenever the timeline changes (play/pause/seek/track).
 		void s?.anchor_server_ms;
 		void s?.position_ms;
@@ -59,20 +61,35 @@
 	});
 	$effect(() => {
 		if (!ms) return;
-		const handlers: [MediaSessionAction, () => void][] = [
-			['play', () => station.state?.playing || station.togglePlay()],
-			['pause', () => station.state?.playing && station.togglePlay()],
+		// Play / pause from the OS are yours only: taking headphones off (ear detection, Bluetooth
+		// disconnect) sends "pause", and that must not stop the station for the whole room.
+		const handlers: [MediaSessionAction | 'enterpictureinpicture', () => void][] = [
+			['play', () => ui.muted && toggleMute()],
+			['pause', () => ui.muted || toggleMute()],
 			['nexttrack', () => station.skip()]
 		];
+		// Leaving the tab while it plays: Chrome opens the mini player by itself (no gesture needed).
+		if (miniSupported) handlers.push(['enterpictureinpicture', () => void openMini(station)]);
 		for (const [a, h] of handlers) {
 			try {
-				ms.setActionHandler(a, h);
+				ms.setActionHandler(a as MediaSessionAction, h);
 			} catch {
 				/* unsupported action */
 			}
 		}
-		return () => handlers.forEach(([a]) => ms.setActionHandler(a, null));
+		return () => {
+			for (const [a] of handlers) {
+				try {
+					ms.setActionHandler(a as MediaSessionAction, null);
+				} catch {
+					/* unsupported action */
+				}
+			}
+		};
 	});
+
+	// --- mini player goes away with the station (name change, leaving) ---
+	$effect(() => closeMini);
 
 	// --- logo mark + favicons follow your accent (orange pixels recoloured, see logo.ts) ---
 	const icons =

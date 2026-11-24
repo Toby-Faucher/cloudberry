@@ -34,7 +34,8 @@ file to land on the same timeline.
   avatars, synced lyrics from LRCLIB when available.
 - **Visualizer.** Rust→WASM spectrum, band and beat analysis driving three modes (Halo, Bloom,
   Bars) and a fullscreen lean-back view (`F`).
-- **Fits in a browser tab.** Media Session controls, tab title, keyboard shortcuts
+- **Fits in a browser tab.** Media Session controls (OS play/pause and headphones only mute
+  you), a mini player that pops up when you leave the tab (Chromium), tab title, keyboard shortcuts
   (`Space`, `N`, `M`, `/`, `?`, `F`), per-track tint, light and dark mode, `prefers-reduced-motion`.
 - **Tiny.** One Rust binary plus SQLite; target under 40 MB RSS when idle.
 
