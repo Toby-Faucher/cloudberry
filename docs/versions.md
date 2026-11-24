@@ -29,6 +29,11 @@ The version lives in two places, always the same number: `version` in `Cargo.tom
   quarter circle (Cloudberry, Pink, Lime, Cyan, Violet, Gold); arrow keys and Enter work too. Just
   for you, remembered in the browser. The logo, favicons, visualizer and per-track tint follow it.
   No database change. Not verified: a screen reader, and the favicon swap in Safari and Firefox.
+- **v1.3.0**: headphones only pause you, and a mini player. OS play/pause (media keys, headset
+  buttons, taking headphones off) now mutes and unmutes just you instead of pausing the room. A
+  Spotify-style mini player (art, title, progress, play/pause, hold-skip, mute) pops up when you
+  leave the playing tab in Chrome 134+, or from the new header key. No database change. Not
+  verified: Chrome auto-opening it on a real tab switch, and real headphones.
 
 ## How a release is cut
 
