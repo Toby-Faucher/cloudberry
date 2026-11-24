@@ -210,7 +210,12 @@ Persistence: `chat(id INT PK, kind, name, text, at)` (keep last 500), `tracks.ga
 - Undo toast (~6 s) for remove and skip. Remove → Undo sends `insert` at the old index.
   Skip → Undo sends `insert` of the skipped track at index 0 (it plays next, from the start).
 - Media Session API: metadata (title, artwork `/art/{id}.jpg`), play/pause/nexttrack handlers,
-  positionState kept updated.
+  positionState kept updated. OS play/pause only mute/unmute you (headphone ear detection and
+  Bluetooth disconnects send "pause"; that must not stop the room). playbackState reads "paused"
+  while you are muted, so the OS offers play back.
+- Mini player: Document Picture-in-Picture window (Chromium desktop) with art, title, play/pause,
+  hold-skip and mute. Opens by itself on tab switch via the `enterpictureinpicture` Media Session
+  action (Chrome 134+, while audible), or from the header key.
 - Tab title "▶ <title> · Cloudberry" while playing, "Cloudberry" otherwise.
 - Per-track accent: `fast-average-color` on the thumbnail → CSS var `--track-tint` used by the glow
   and visualizer (blend toward brand orange; keep contrast; fallback orange).

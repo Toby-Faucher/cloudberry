@@ -4,8 +4,11 @@
 	import { pressSkip, releaseSkip, skipHold } from '#lib/hold.svelte.ts';
 	import { wiggle } from '#lib/motion/motion.ts';
 
-	/** Skip for everyone, but only after a ~600 ms hold: the key fills from the bottom, berry → blush. */
-	let { station, disabled = false }: { station: Station; disabled?: boolean } = $props();
+	/**
+	 * Skip for everyone, but only after a ~600 ms hold: the key fills from the bottom, berry → blush.
+	 * `win`: the window it is drawn in (the mini player has its own).
+	 */
+	let { station, disabled = false, win = window }: { station: Station; disabled?: boolean; win?: Window } = $props();
 
 	let btn = $state<HTMLButtonElement>();
 	let hinting = $state(false);
@@ -18,20 +21,20 @@
 		lastHint = skipHold.hint;
 		wiggle(btn);
 		hinting = true;
-		clearTimeout(hintTimer);
-		hintTimer = window.setTimeout(() => (hinting = false), 1600);
+		win.clearTimeout(hintTimer);
+		hintTimer = win.setTimeout(() => (hinting = false), 1600);
 	});
 
 	const down = (e: PointerEvent) => {
 		if (disabled || e.button !== 0) return;
 		btn?.setPointerCapture(e.pointerId);
-		pressSkip(station);
+		pressSkip(station, win);
 	};
 	const key = (e: KeyboardEvent) => {
 		if (e.key !== 'Enter' && e.key !== ' ') return;
 		e.preventDefault();
 		e.stopPropagation(); // Space must not also reach the global play/pause shortcut
-		if (!e.repeat && !disabled) pressSkip(station);
+		if (!e.repeat && !disabled) pressSkip(station, win);
 	};
 	const keyUp = (e: KeyboardEvent) => {
 		if (e.key === 'Enter' || e.key === ' ') releaseSkip();

@@ -5,8 +5,9 @@
 	import type { Station } from '#lib/station.svelte.ts';
 	import { chatVisible, store, toggleChat, ui } from '#lib/ui.svelte.ts';
 	import { dur } from '#lib/util.ts';
+	import { mini, miniSupported, toggleMini } from '#lib/mini.svelte.ts';
 
-	/** Header icon buttons: notifications, shortcuts help, chat toggle (with unread badge). */
+	/** Header icon buttons: notifications, mini player, shortcuts help, chat toggle (with unread badge). */
 	let { station }: { station: Station } = $props();
 
 	const canNotify = typeof Notification !== 'undefined';
@@ -44,6 +45,19 @@
 				<Icon name={ui.notify ? "bell" : "bell-off"} size={20} />
 			</Tooltip.Trigger>
 			{@render tip(ui.notify ? 'Notifying you when your tracks start' : 'Notify me when my tracks start')}
+		</Tooltip.Root>
+	{/if}
+	{#if miniSupported}
+		<Tooltip.Root>
+			<Tooltip.Trigger
+				class={['icon-btn', 'desk', mini.open && 'on']}
+				aria-label="Mini player"
+				aria-pressed={mini.open}
+				onclick={() => toggleMini(station)}
+			>
+				<Icon name="popout" size={20} />
+			</Tooltip.Trigger>
+			{@render tip(mini.open ? 'Close mini player' : 'Mini player (pops up when you leave the tab)')}
 		</Tooltip.Root>
 	{/if}
 	<Tooltip.Root>

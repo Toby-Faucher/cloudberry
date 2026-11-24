@@ -10,8 +10,12 @@ export const skipHold = $state({ p: 0, hint: 0 });
 const hold = new Hold();
 let raf = 0;
 
-export function pressSkip(station: Station) {
+let frames: Window = window;
+
+/** `win`: whose frames drive the ring (the mini player's own window: the page's are throttled while hidden). */
+export function pressSkip(station: Station, win: Window = window) {
 	if (hold.active || !station.state?.current) return;
+	frames = win;
 	hold.press(performance.now());
 	const tick = () => {
 		const { p, done } = hold.tick(performance.now());
@@ -21,13 +25,13 @@ export function pressSkip(station: Station) {
 			raf = 0;
 			return;
 		}
-		raf = requestAnimationFrame(tick);
+		raf = frames.requestAnimationFrame(tick);
 	};
-	raf = requestAnimationFrame(tick);
+	raf = frames.requestAnimationFrame(tick);
 }
 
 export function releaseSkip() {
-	cancelAnimationFrame(raf);
+	frames.cancelAnimationFrame(raf);
 	raf = 0;
 	if (hold.release(performance.now()) === 'tap') skipHold.hint++;
 	skipHold.p = 0;
